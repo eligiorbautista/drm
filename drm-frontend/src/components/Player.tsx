@@ -179,14 +179,26 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     const uad = (navigator as any).userAgentData;
     const platform = uad?.platform || navigator.platform || '';
     const isMobile = uad?.mobile === true;
+    
+    // Firefox reports all devices as "Linux" for privacy, so we need to detect it via userAgent
+    // and also check for Android in userAgent before checking platform
     const uaHasAndroid = /Android/i.test(navigator.userAgent);
-    const isAndroid = platform.toLowerCase() === 'android' ||
-                      uaHasAndroid ||
+    const uaHasFirefox = /Firefox/i.test(navigator.userAgent);
+    const uaHasMobile = /Mobile|Tablet/i.test(navigator.userAgent);
+    
+    // Android detection: prioritize userAgent over platform (Firefox/Chrome on Android)
+    const isAndroid = uaHasAndroid || 
+                      platform.toLowerCase() === 'android' ||
                       (isMobile && /linux/i.test(platform));
     
-    const isWindows = /windows/i.test(platform) || /Win/i.test(navigator.userAgent);
-    const detectedPlatform = isAndroid ? 'Android' : isWindows ? 'Windows' : (platform || 'Unknown');
-    logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, isAndroid=${isAndroid}, isWindows=${isWindows}`);
+    // Firefox detection: check userAgent (works cross-platform)
+    const isFirefox = uaHasFirefox;
+    
+    // Windows detection (for non-Firefox browsers)
+    const isWindows = !isFirefox && (/windows/i.test(platform) || /Win/i.test(navigator.userAgent));
+    
+    const detectedPlatform = isAndroid ? 'Android' : isWindows ? 'Windows' : isFirefox ? 'Firefox' : (platform || 'Unknown');
+    logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, isAndroid=${isAndroid}, isFirefox=${isFirefox}, uaHasMobile=${uaHasMobile}`);
     logDebug(`Detected platform: ${detectedPlatform}`);
 
     const params = new URLSearchParams(window.location.search);
@@ -217,16 +229,20 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
 
     // Media buffer sizing:
     // - Android HW (Widevine L1) needs at least 1200ms
-    // - Other platforms (Linux, macOS, Windows Mobile/Firefox SW) need at least 600ms for SW-secure decryption
-    // - Other platforms: library default (100ms) is fine
+    // - Firefox needs at least 900ms (from client-sdk-changelog.md)
+    // - Other platforms (Chrome/Edge SW on Linux/macOS/Windows) need at least 600ms for SW-secure decryption
     let mediaBufferMs = -1;
     if (isAndroid && androidRobustness === 'HW') {
       mediaBufferMs = 1200;
       logDebug(`Set mediaBufferMs=1200 for Android HW robustness`);
+    } else if (isFirefox && mediaBufferMs < 900) {
+      // Firefox specifically needs 900ms to prevent stuttering
+      mediaBufferMs = 900;
+      logDebug(`Set mediaBufferMs=900 for Firefox (Firefox-specific requirement)`);
     } else if (mediaBufferMs < 600) {
-      // Apply 600ms buffer for Software CDMs (Firefox SW, Chrome SW on Mac/Linux, etc.)
+      // Apply 600ms buffer for Software CDMs (Chrome SW, Edge SW on Mac/Linux/Windows, etc.)
       mediaBufferMs = 600;
-      logDebug(`Set mediaBufferMs=600 for Software DRM/General Desktop`);
+      logDebug(`Set mediaBufferMs=600 for Software DRM/Desktop browsers`);
     }
 
     const video = {

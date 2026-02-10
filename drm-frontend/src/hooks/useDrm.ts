@@ -17,19 +17,29 @@ export interface UseDrmOptions {
 
 /**
  * Platform detection utility
+ * Note: Firefox reports all devices as "Linux" for privacy, so we detect it via userAgent
  */
 function detectPlatform() {
   const uad = (navigator as any).userAgentData;
   const platform = uad?.platform || navigator.platform || '';
   const isMobile = uad?.mobile === true;
+  
+  // Firefox reports as Linux everywhere - detect via userAgent
   const uaHasAndroid = /Android/i.test(navigator.userAgent);
-  const isAndroid = platform.toLowerCase() === 'android' ||
-                    uaHasAndroid ||
+  const uaHasFirefox = /Firefox/i.test(navigator.userAgent);
+  
+  // Android detection: prioritize userAgent over platform
+  const isAndroid = uaHasAndroid || 
+                    platform.toLowerCase() === 'android' ||
                     (isMobile && /linux/i.test(platform));
+  
+  // Firefox detection
+  const isFirefox = uaHasFirefox;
   
   return {
     isAndroid,
-    platform: isAndroid ? 'Android' : (platform || 'Unknown')
+    isFirefox,
+    platform: isAndroid ? 'Android' : isFirefox ? 'Firefox' : (platform || 'Unknown')
   };
 }
 
@@ -141,8 +151,12 @@ export function useDrm() {
     if (isAndroid && androidRobustness === 'HW' && mediaBufferMs < 600) {
       mediaBufferMs = 1200;
       logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Android HW robustness`);
+    } else if (isFirefox && mediaBufferMs < 900) {
+      // Firefox specifically needs 900ms to prevent stuttering (per client-sdk-changelog.md)
+      mediaBufferMs = 900;
+      logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Firefox (Firefox-specific requirement)`);
     } else if (mediaBufferMs < 600) {
-      // Firefox (and other desktop browsers using SW CDM) needs at least 600ms
+      // Other desktop browsers using SW CDM need at least 600ms
       mediaBufferMs = 600;
       logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Desktop/Software DRM`);
     }
