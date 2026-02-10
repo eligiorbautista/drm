@@ -137,15 +137,14 @@ export function useDrm() {
     }
 
     // Determine media buffer size based on platform
-    const isWindows = /windows/i.test(platform) || /Win/i.test(navigator.userAgent);
     let mediaBufferMs = options.mediaBufferMs || -1;
     if (isAndroid && androidRobustness === 'HW' && mediaBufferMs < 600) {
       mediaBufferMs = 1200;
       logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Android HW robustness`);
-    } else if (isWindows && mediaBufferMs < 600) {
-      // Windows Widevine SW requires at least 600ms buffer for stable playback
+    } else if (mediaBufferMs < 600) {
+      // Firefox (and other desktop browsers using SW CDM) needs at least 600ms
       mediaBufferMs = 600;
-      logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Windows Widevine`);
+      logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Desktop/Software DRM`);
     }
 
     // Encryption mode MUST match the sender

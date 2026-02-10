@@ -216,16 +216,17 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
 
     // Media buffer sizing:
-    // - Windows Widevine SW needs at least 600ms (library defaults to 100ms which is too low)
     // - Android HW (Widevine L1) needs at least 1200ms
+    // - Other platforms (Linux, macOS, Windows Mobile/Firefox SW) need at least 600ms for SW-secure decryption
     // - Other platforms: library default (100ms) is fine
     let mediaBufferMs = -1;
     if (isAndroid && androidRobustness === 'HW') {
       mediaBufferMs = 1200;
       logDebug(`Set mediaBufferMs=1200 for Android HW robustness`);
-    } else if (isWindows) {
+    } else if (mediaBufferMs < 600) {
+      // Apply 600ms buffer for Software CDMs (Firefox SW, Chrome SW on Mac/Linux, etc.)
       mediaBufferMs = 600;
-      logDebug(`Set mediaBufferMs=600 for Windows Widevine SW`);
+      logDebug(`Set mediaBufferMs=600 for Software DRM/General Desktop`);
     }
 
     const video = {
