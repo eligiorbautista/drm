@@ -4,7 +4,7 @@
  * A wrapper component that redirects unauthenticated users to the login page.
  * Optionally shows a loading state while authentication is being checked.
  */
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -17,7 +17,7 @@ export function ProtectedRoute({
   children,
   requireAuth = true,
 }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
 
   // Show loading state while auth is initializing

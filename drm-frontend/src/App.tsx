@@ -1,4 +1,4 @@
-import { Routes, Route, Link, useLocation } from 'react-router-dom'
+import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
 import { AuthPage } from './components/Auth'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { ViewerPage } from './pages/ViewerPage'
@@ -19,7 +19,7 @@ function UserMenu({
   onClose: () => void;
 }) {
   const { user, logout } = useAuth();
-  const navigate = useLocation();
+  const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = async () => {

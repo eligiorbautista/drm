@@ -30,6 +30,30 @@ async function seedUsers() {
       password: 'pwq123456',
       role: 'user',
     },
+    {
+      email: 'user3@sb2024.live',
+      username: 'user3',
+      password: 'pwq123456',
+      role: 'user',
+    },
+    {
+      email: 'user4@sb2024.live',
+      username: 'user4',
+      password: 'pwq123456',
+      role: 'user',
+    },
+    {
+      email: 'user5@sb2024.live',
+      username: 'user5',
+      password: 'pwq123456',
+      role: 'user',
+    },
+    {
+      email: 'user6@sb2024.live',
+      username: 'user6',
+      password: 'pwq123456',
+      role: 'user',
+    },
   ];
 
   for (const userData of users) {

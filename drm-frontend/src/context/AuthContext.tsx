@@ -22,14 +22,6 @@ interface User {
   updatedAt: string;
 }
 
-interface AuthResponse {
-  user: User;
-  token: string;
-  refreshToken: string;
-  expiresAt: string;
-  message?: string;
-}
-
 interface AuthContextType {
   // State
   user: User | null;
@@ -74,12 +66,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Clear any stored error
   const clearError = useCallback(() => {
     setError(null);
-  }, []);
-
-  // Check if token is expired
-  const isTokenExpired = useCallback((expiresAt: string): boolean => {
-    const expiry = new Date(expiresAt).getTime();
-    return Date.now() >= expiry;
   }, []);
 
   // Schedule token refresh

@@ -128,8 +128,8 @@ export function useDrm() {
     const iv = options.iv || hexToUint8Array(ivHex);
 
     // Detect platform and robustness
-    const { isAndroid, platform } = detectPlatform();
-    logDebug(`Platform detected: ${platform} (isAndroid=${isAndroid})`);
+    const { isAndroid, isFirefox, platform } = detectPlatform();
+    logDebug(`Platform detected: ${platform} (isAndroid=${isAndroid}, isFirefox=${isFirefox})`);
 
     // Allow URL param override: ?robustness=HW or ?robustness=SW
     const params = new URLSearchParams(window.location.search);
