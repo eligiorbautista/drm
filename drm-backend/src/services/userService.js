@@ -14,6 +14,18 @@ const logger = require('../middleware/logger');
 const SALT_ROUNDS = 12;
 
 /**
+ * Ensure database connection is established
+ */
+async function ensureConnection() {
+  try {
+    await prisma.$connect();
+  } catch (error) {
+    logger.error('Failed to connect to database', { error: error.message });
+    throw error;
+  }
+}
+
+/**
  * Hash a password using bcrypt
  * @param {string} password - Plain text password
  * @returns {Promise<string>} Hashed password
@@ -103,6 +115,8 @@ async function createUser(data) {
  * @returns {Promise<object>} User session data (with tokens)
  */
 async function authenticateUser(email, password, ipAddress, userAgent) {
+  await ensureConnection();
+
   const user = await prisma.user.findUnique({
     where: { email: email.toLowerCase() },
   });
