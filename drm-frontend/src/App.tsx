@@ -1,9 +1,115 @@
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import { AuthPage } from './components/Auth'
+import { ProtectedRoute } from './components/ProtectedRoute'
 import { ViewerPage } from './pages/ViewerPage'
 import { BroadcasterPage } from './pages/BroadcasterPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { AuthProvider } from './context/AuthContext'
+import { useAuth } from './context/AuthContext'
 import './App.css'
+
+// User Menu Component
+function UserMenu({
+  isOpen,
+  onToggle,
+  onClose,
+}: {
+  isOpen: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+}) {
+  const { user, logout } = useAuth();
+  const navigate = useLocation();
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const handleLogout = async () => {
+    await logout();
+    onClose();
+    navigate('/', { replace: true });
+  };
+
+  // Handle click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen, onClose]);
+
+  return (
+    <>
+      <button
+        onClick={onToggle}
+        className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-lg text-[#a0a0a0] hover:text-white hover:bg-[#252525] transition-colors cursor-pointer min-h-[44px]"
+        aria-expanded={isOpen}
+        aria-haspopup="true"
+      >
+        <div className="w-8 h-8 bg-[#252525] rounded-full flex items-center justify-center border border-[#404040]">
+          {user ? (
+            <span className="text-sm font-medium text-white">
+              {user.username?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
+            </span>
+          ) : (
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          )}
+        </div>
+        <span className="hidden lg:block text-sm">
+          {user?.username || 'User'}
+        </span>
+        <svg className={`hidden lg:block w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {/* User dropdown menu */}
+      {isOpen && (
+        <div ref={menuRef} className="absolute right-0 mt-2 w-48 bg-[#1e1e1e] border border-[#333333] rounded-lg shadow-xl py-1 animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+          {user && (
+            <div className="px-4 py-3 border-b border-[#333333]">
+              <p className="text-sm font-medium text-white truncate">
+                @{user.username}
+              </p>
+              <p className="text-xs text-[#666666] truncate">
+                {user.email}
+              </p>
+            </div>
+          )}
+          <Link
+            to="/settings"
+            onClick={onClose}
+            className="flex items-center gap-3 px-4 py-3 text-sm text-[#a0a0a0] hover:text-white hover:bg-[#252525] transition-colors cursor-pointer"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            Settings
+          </Link>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-[#a0a0a0] hover:text-white hover:bg-[#252525] transition-colors cursor-pointer"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            Sign Out
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
 
 // Import hooks for mobile menu and global settings
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -151,49 +257,11 @@ function AppNavigation() {
           <div className="flex items-center gap-0.5 sm:gap-3">
             {/* User menu trigger */}
             <div className="relative" ref={userMenuRef}>
-              <button
-                onClick={toggleUserMenu}
-                className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-lg text-[#a0a0a0] hover:text-white hover:bg-[#252525] transition-colors cursor-pointer min-h-[44px]"
-                aria-expanded={isUserMenuOpen}
-                aria-haspopup="true"
-              >
-                <div className="w-8 h-8 bg-[#252525] rounded-full flex items-center justify-center border border-[#404040]">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                </div>
-                <span className="hidden lg:block text-sm">User</span>
-                <svg className={`hidden lg:block w-4 h-4 transition-transform duration-200 ${isUserMenuOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-
-              {/* User dropdown menu */}
-              {isUserMenuOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-[#1e1e1e] border border-[#333333] rounded-lg shadow-xl py-1 animate-in fade-in slide-in-from-top-2 duration-200">
-                  <Link
-                    to="/settings"
-                    onClick={closeUserMenu}
-                    className="flex items-center gap-3 px-4 py-3 text-sm text-[#a0a0a0] hover:text-white hover:bg-[#252525] transition-colors cursor-pointer"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Settings
-                  </Link>
-                  <Link
-                    to="/"
-                    onClick={closeUserMenu}
-                    className="flex items-center gap-3 px-4 py-3 text-sm text-[#a0a0a0] hover:text-white hover:bg-[#252525] transition-colors cursor-pointer"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    Sign Out
-                  </Link>
-                </div>
-              )}
+              <UserMenu
+                isOpen={isUserMenuOpen}
+                onToggle={toggleUserMenu}
+                onClose={closeUserMenu}
+              />
             </div>
           </div>
         </div>
@@ -307,47 +375,79 @@ export default function App() {
   const isAuthPage = location.pathname === '/';
 
   return isAuthPage ? (
-    <AuthPage />
+    <AuthProvider>
+      <AuthPage />
+    </AuthProvider>
   ) : (
-    <EncryptionProvider>
-      <div className="min-h-screen flex flex-col bg-[#141414]">
-        <AppNavigation />
+    <AuthProvider>
+      <EncryptionProvider>
+        <div className="min-h-screen flex flex-col bg-[#141414]">
+          <AppNavigation />
 
-        {/* Main Content */}
-        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
-          <div className="max-w-6xl lg:max-w-7xl mx-auto">
-            <Routes>
-              <Route path="/" element={<ViewerPage />} />
-              <Route path="/viewer" element={<ViewerPage />} />
-              <Route path="/broadcaster" element={<BroadcasterPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Routes>
-          </div>
-        </main>
+          {/* Main Content */}
+          <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 lg:py-8">
+            <div className="max-w-6xl lg:max-w-7xl mx-auto">
+              <Routes>
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute requireAuth={false}>
+                      <ViewerPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/viewer"
+                  element={
+                    <ProtectedRoute>
+                      <ViewerPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/broadcaster"
+                  element={
+                    <ProtectedRoute>
+                      <BroadcasterPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings"
+                  element={
+                    <ProtectedRoute>
+                      <SettingsPage />
+                    </ProtectedRoute>
+                  }
+                />
+              </Routes>
+            </div>
+          </main>
 
-        {/* Footer */}
-        <footer className="bg-[#1e1e1e] border-t border-[#333333] px-4 sm:px-6 py-4 sm:py-6">
-          <div className="max-w-7xl mx-auto">
-            {/* Mobile: Stacked, Desktop: Row */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 text-center sm:text-left">
-                <p className="text-xs sm:text-sm text-[#666666]">
-                  DRM Media Platform v1.0
-                </p>
-                <p className="text-sm text-[#888888] hidden sm:block">
-                  •
-                </p>
-                <p className="text-xs sm:text-sm text-[#888888]">
-                  Secure DRM-Protected Streaming
+          {/* Footer */}
+          <footer className="bg-[#1e1e1e] border-t border-[#333333] px-4 sm:px-6 py-4 sm:py-6">
+            <div className="max-w-7xl mx-auto">
+              {/* Mobile: Stacked, Desktop: Row */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4 text-center sm:text-left">
+                  <p className="text-xs sm:text-sm text-[#666666]">
+                    DRM Media Platform v1.0
+                  </p>
+                  <p className="text-sm text-[#888888] hidden sm:block">
+                    •
+                  </p>
+                  <p className="text-xs sm:text-sm text-[#888888]">
+                    Secure DRM-Protected Streaming
+                  </p>
+                </div>
+                <p className="text-xs text-[#555555]">
+                  © 2026 DRM Media Platform. All rights reserved.
                 </p>
               </div>
-              <p className="text-xs text-[#555555]">
-                © 2026 DRM Media Platform. All rights reserved.
-              </p>
             </div>
-          </div>
-        </footer>
-      </div>
-    </EncryptionProvider>
+          </footer>
+        </div>
+      </EncryptionProvider>
+    </AuthProvider>
   );
 }

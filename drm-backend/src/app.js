@@ -20,6 +20,7 @@ const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const healthRoutes = require('./routes/health');
 const callbackRoutes = require('./routes/callback');
 const tokenRoutes = require('./routes/token');
+const authRoutes = require('./routes/auth');
 const settingsRoutes = require('./routes/settings');
 const broadcastRoutes = require('./routes/broadcast');
 
@@ -85,7 +86,7 @@ app.use(
       }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'x-dt-auth-token', 'x-dt-custom-data'],
+    allowedHeaders: ['Content-Type', 'x-dt-auth-token', 'x-dt-custom-data', 'Authorization'],
   })
 );
 
@@ -112,6 +113,9 @@ app.use('/api/settings', settingsRoutes);
 
 // Broadcast session management (public access)
 app.use('/api/broadcast', broadcastRoutes);
+
+// User authentication
+app.use('/api/auth', authRoutes);
 
 // ---------------------------------------------------------------------------
 // Error handling

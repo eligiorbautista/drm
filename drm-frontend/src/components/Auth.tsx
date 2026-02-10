@@ -1,33 +1,47 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 export function AuthPage() {
   const navigate = useNavigate();
+  const { login, register, isLoading, error: authError, clearError } = useAuth();
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [localError, setLocalError] = useState('');
 
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setLocalError('');
+    clearError();
+
     // Basic validation
     if (!email || !password) {
-      setError('Please fill in all fields');
+      setLocalError('Please fill in all fields');
       return;
     }
 
-    setIsLoading(true);
-    // Simulate a brief loading state then redirect
-    setTimeout(() => {
+    if (isRegistering && !username) {
+      setLocalError('Username is required');
+      return;
+    }
+
+    try {
+      if (isRegistering) {
+        await register({ email, username, password });
+      } else {
+        await login(email, password);
+      }
       navigate('/viewer');
-      setIsLoading(false);
-    }, 500);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'An error occurred');
+    }
   };
 
   return (
@@ -39,9 +53,9 @@ export function AuthPage() {
       </div>
 
       <div className="bg-[#1e1e1e] rounded-xl sm:rounded-2xl p-5 sm:p-6 lg:p-8 border border-[#333333]">
-        {error && (
+        {(localError || authError) && (
           <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg">
-            <p className="text-sm text-red-400">{error}</p>
+            <p className="text-sm text-red-400">{localError || authError}</p>
           </div>
         )}
 
@@ -61,6 +75,27 @@ export function AuthPage() {
               autoComplete="email"
             />
           </div>
+
+          {isRegistering && (
+            <div>
+              <label htmlFor="username" className="block text-sm font-medium text-[#a0a0a0] mb-2">
+                Username
+              </label>
+              <input
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="johndoe123"
+                className="w-full px-4 py-3 sm:py-3.5 bg-[#1e1e1e] border border-[#404040] rounded-lg text-white placeholder-[#666666] focus:ring-2 focus:ring-white focus:border-transparent outline-none transition-all text-sm sm:text-base"
+                required
+                minLength={3}
+                maxLength={20}
+                autoComplete="username"
+              />
+            </div>
+          )}
+
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-[#a0a0a0] mb-2">
               Password
@@ -71,11 +106,11 @@ export function AuthPage() {
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder={isRegistering ? 'Min. 8 characters' : '••••••••'}
                 className="w-full px-4 py-3 sm:py-3.5 pr-12 bg-[#1e1e1e] border border-[#404040] rounded-lg text-white placeholder-[#666666] focus:ring-2 focus:ring-white focus:border-transparent outline-none transition-all text-sm sm:text-base"
                 required
                 minLength={8}
-                autoComplete="current-password"
+                autoComplete={isRegistering ? 'new-password' : 'current-password'}
               />
               {password && (
                 <button
@@ -111,13 +146,39 @@ export function AuthPage() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
-                <span className="hidden xs:inline">Signing in...</span>
+                <span className="hidden xs:inline">
+                  {isRegistering ? 'Creating account...' : 'Signing in...'}
+                </span>
                 <span className="xs:hidden">Loading...</span>
               </span>
             ) : (
-              'Sign In'
+              isRegistering ? 'Create Account' : 'Sign In'
             )}
           </button>
+
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setIsRegistering(!isRegistering);
+                setLocalError('');
+                clearError();
+              }}
+              className="text-sm text-[#a0a0a0] hover:text-white transition-colors cursor-pointer"
+            >
+              {isRegistering ? (
+                <>
+                  Already have an account?{' '}
+                  <span className="text-white font-medium">Sign in</span>
+                </>
+              ) : (
+                <>
+                  Don't have an account?{' '}
+                  <span className="text-white font-medium">Create one</span>
+                </>
+              )}
+            </button>
+          </div>
         </form>
       </div>
 
