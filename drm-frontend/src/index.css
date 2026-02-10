@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+/* Custom color theme for minimalist dark theme */
+@theme {
+  /* Background colors */
+  --color-bg-main: #141414;
+  --color-bg-surface: #1e1e1e;
+  --color-bg-elevated: #252525;
+  --color-bg-hover: #333333;
+
+  /* Border colors */
+  --color-border: #333333;
+  --color-border-light: #404040;
+
+  /* Text colors */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #d0d0d0;
+  --color-text-muted: #a0a0a0;
+  --color-text-faint: #666666;
+
+  /* Accent colors */
+  --color-accent: #ffffff;
+  --color-accent-hover: #e5e5e5;
+
+  /* Semantic colors */
+  --color-error: #ef4444;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+}
+
+/* Smooth scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #141414;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #333333;
+}
+
+/* Responsive video container - maintains aspect ratio */
+.video-container {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+}
+
+.video-container video {
+  width: 100%;
+  height: auto;
+  max-height: 80vh;
+  object-fit: contain;
+}
+
+/* Touch-friendly interactions for mobile */
+@media (hover: none) and (pointer: coarse) {
+  button,
+  [role="button"],
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Override for toggle switches to maintain aspect ratio */
+  .toggle-switch {
+    min-height: auto;
+    min-width: auto;
+  }
+}
+
+/* Responsive typography scaling */
+@media (max-width: 640px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+/* Large screen optimizations */
+@media (min-width: 1536px) {
+  .container-max {
+    max-width: 1400px;
+  }
+}
+
+/* Safe area insets for notched devices */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* Landscape mobile optimizations */
+@media (max-height: 500px) and (orientation: landscape) {
+  .landscape-hide {
+    display: none;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  * {
+    border-color: currentColor !important;
+  }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,92 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// Settings Models
+// ============================================================================
+
+model Setting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  valueType   String   @default("STRING")
+  category    String   @default("general")
+  description String?
+  isPublic    Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@map("settings")
+}
+
+// ============================================================================
+// Broadcast Session Tracking Models
+// ============================================================================
+
+model BroadcastSession {
+  id           String   @id @default(cuid())
+  streamId     String   @unique  // Unique stream identifier
+
+  // Stream configuration
+  endpoint     String?           // WHIP/WHEP endpoint URL
+  merchant     String?           // DRMtoday merchant ID
+  userIdForDrm String?           // User identifier for DRM
+  encrypted    Boolean  @default(false)
+
+  // Connection state
+  isActive     Boolean  @default(true)
+  connectionState String? @default("disconnected") // WebRTC connection state
+  iceservers   Json?    // ICE server configuration
+  lastPingAt   DateTime?
+
+  // RTCPeerConnection metadata
+  localSdp     String?           // Local SDP (offer/answer)
+  remoteSdp    String?           // Remote SDP (answer/offer)
+  iceCandidates Json?            // Collected ICE candidates
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([streamId])
+  @@index([updatedAt])
+  @@map("broadcast_sessions")
+}
+
+// ============================================================================
+// DRM License Tracking
+// ============================================================================
+
+model LicenseRequest {
+  id           String   @id @default(cuid())
+  assetId      String
+  variant      String?
+  session      String?  // DRMToday session ID
+
+  drmScheme    String   // FAIRPLAY, WIDEVINE_MODULAR, PLAYREADY, etc.
+  securityLevel String?
+  clientInfo   Json?
+
+  granted      Boolean  @default(false)
+  deniedReason String?
+
+  ipAddress    String?
+  userAgent    String?
+
+  createdAt    DateTime @default(now())
+
+  @@index([assetId])
+  @@index([session])
+  @@index([createdAt])
+  @@map("license_requests")
+}

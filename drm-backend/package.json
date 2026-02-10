@@ -1,0 +1,46 @@
+{
+  "name": "drm-backend",
+  "version": "1.0.0",
+  "description": "Backend server for SB's DRM callback authorization and token generation",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "vercel-dev": "vercel dev",
+    "lint": "eslint src/",
+    "test": "jest --verbose",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "prisma:seed": "node prisma/seed.js",
+    "db:push": "prisma db push",
+    "db:reset": "prisma migrate reset"
+  },
+  "keywords": [
+    "drm",
+    "sb",
+    "callback",
+    "authorization"
+  ],
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/client": "^6.0.0",
+    "bcrypt": "^5.1.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.4",
+    "express": "^4.21.2",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.1",
+    "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "jest": "^30.2.0",
+    "nodemon": "3.1.11",
+    "prisma": "^6.0.0",
+    "supertest": "^7.2.2"
+  }
+}
