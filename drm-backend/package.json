@@ -5,6 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "build": "prisma generate",
     "dev": "nodemon src/index.js",
     "vercel-dev": "vercel dev",
     "lint": "eslint src/",
@@ -15,7 +16,8 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "node prisma/seed.js",
     "db:push": "prisma db push",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "postinstall": "prisma generate"
   },
   "keywords": [
     "drm",

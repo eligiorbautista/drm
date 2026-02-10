@@ -18,13 +18,5 @@ function getPrismaClient() {
   return prisma;
 }
 
-// Export a proxy that handles connection
-module.exports = new Proxy({}, {
-  get(target, prop) {
-    const client = getPrismaClient();
-    if (typeof client[prop] === 'function') {
-      return client[prop].bind(client);
-    }
-    return client[prop];
-  }
-});
+// Export the Prisma client directly
+module.exports = getPrismaClient();
