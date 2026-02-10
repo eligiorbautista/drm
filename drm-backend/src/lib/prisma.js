@@ -3,24 +3,28 @@ const { PrismaClient } = require('@prisma/client');
 /**
  * Prisma Client Singleton
  *
- * In development, we want to reuse the same instance to avoid
- * "too many connections" errors when the hot reload happens.
+ * Handles serverless cold starts and development hot reloads
  */
-const prisma = global.prisma || new PrismaClient({
-  log: process.env.NODE_ENV === 'development'
-    ? ['query', 'error', 'warn']
-    : ['error'],
-});
+let prisma;
 
-if (process.env.NODE_ENV === 'development') {
-  global.prisma = prisma;
+function getPrismaClient() {
+  if (!prisma) {
+    prisma = new PrismaClient({
+      log: process.env.NODE_ENV === 'development'
+        ? ['query', 'error', 'warn']
+        : ['error'],
+    });
+  }
+  return prisma;
 }
 
-/**
- * Graceful shutdown handler
- */
-process.on('beforeExit', async () => {
-  await prisma.$disconnect();
+// Export a proxy that handles connection
+module.exports = new Proxy({}, {
+  get(target, prop) {
+    const client = getPrismaClient();
+    if (typeof client[prop] === 'function') {
+      return client[prop].bind(client);
+    }
+    return client[prop];
+  }
 });
-
-module.exports = prisma;
