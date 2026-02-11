@@ -192,18 +192,16 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
   }, [isConnected]);
 
-  // Extra monitoring for embed mode - ensure video stays playing and audio is working
+  // Extra monitoring for embed mode - ensure video stays playing
   useEffect(() => {
     if (!isEmbedMode || !isConnected) return;
     
     const video = videoRef.current;
-    const audio = audioRef.current;
-    if (!video || !audio) return;
+    if (!video) return;
     
-    console.log('[Embed Mode] Setting up video and audio monitoring');
+    console.log('[Embed Mode] Setting up video monitoring');
     
-    const checkMedia = setInterval(() => {
-      // Monitor video
+    const checkVideo = setInterval(() => {
       if (video.paused) {
         console.log('[Embed Mode] Video paused unexpectedly, restarting...');
         video.play().catch(e => console.warn('[Embed Mode] Play failed:', e.message));
@@ -217,26 +215,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       } else {
         console.log('[Embed Mode] WARNING: video has no srcObject');
       }
-      
-      // Monitor audio
-      if (audio.paused) {
-        console.log('[Embed Mode] Audio paused unexpectedly, restarting...');
-        audio.play().catch(e => console.warn('[Embed Mode] Audio play failed:', e.message));
-      }
-      if (audio.srcObject) {
-        const stream = audio.srcObject as MediaStream;
-        if (stream.getAudioTracks().length > 0) {
-          const track = stream.getAudioTracks()[0];
-          console.log('[Embed Mode] Audio track:', track.label, 'readyState:', track.readyState, 'muted:', audio.muted, 'volume:', audio.volume);
-        } else {
-          console.log('[Embed Mode] WARNING: audio element has srcObject but NO audio tracks');
-        }
-      } else {
-        console.log('[Embed Mode] WARNING: audio has no srcObject');
-      }
     }, 2000);
     
-    return () => clearInterval(checkMedia);
+    return () => clearInterval(checkVideo);
   }, [isConnected, isEmbedMode]);
 
   const configureDrm = async (pc: RTCPeerConnection) => {
@@ -351,7 +332,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       videoElement,
       audioElement,
       video,
-      audio: { codec: 'opus' as const, encryption: 'cbcs' as const, keyId, iv },
+      audio: { codec: 'opus' as const, encryption: 'clear' as const },
       logLevel: 3,
       mediaBufferMs
     };
@@ -466,13 +447,13 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             playsInline
             muted={isMuted}
           />
-          {/* Audio element for DRM (required by rtc-drm-transform library) - positioned offscreen but playable */}
+          {/* Hidden audio element for DRM (required by rtc-drm-transform library) */}
           <audio
             ref={audioRef}
             autoPlay
             playsInline
             muted={isMuted}
-            style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px' }}
+            style={{ display: 'none' }}
           />
 
           {/* Unmute Button - Always visible in bottom-right corner when muted */}
@@ -601,13 +582,13 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 />
               </div>
 
-              {/* Audio element for DRM (required by rtc-drm-transform library) - positioned offscreen but playable */}
+              {/* Hidden audio element for DRM (required by rtc-drm-transform library) */}
               <audio
                 ref={audioRef}
                 autoPlay
                 playsInline
                 muted={isMuted}
-                style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px' }}
+                style={{ display: 'none' }}
               />
 
               {/* Error Overlay */}
