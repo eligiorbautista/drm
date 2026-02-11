@@ -72,6 +72,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   const [isMuted, setIsMuted] = useState(isEmbedMode ? true : true);
   const [drmError, setDrmError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
 
   // In embed mode, disable all logging for security and clean output
@@ -190,6 +191,49 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         console.log('[Player] Video is already playing');
       }
     }
+  }, [isConnected]);
+
+  // Track when video is actually playing
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handlePlaying = () => {
+      console.log('[Player] Video is now playing');
+      setIsPlaying(true);
+    };
+
+    const handlePause = () => {
+      console.log('[Player] Video paused');
+      setIsPlaying(false);
+    };
+
+    const handleWaiting = () => {
+      console.log('[Player] Video waiting for data');
+      setIsPlaying(false);
+    };
+
+    const handleEnded = () => {
+      console.log('[Player] Video ended');
+      setIsPlaying(false);
+    };
+
+    video.addEventListener('playing', handlePlaying);
+    video.addEventListener('pause', handlePause);
+    video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('ended', handleEnded);
+
+    // Reset playing state when disconnected
+    if (!isConnected) {
+      setIsPlaying(false);
+    }
+
+    return () => {
+      video.removeEventListener('playing', handlePlaying);
+      video.removeEventListener('pause', handlePause);
+      video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('ended', handleEnded);
+    };
   }, [isConnected]);
 
   // Extra monitoring for embed mode - ensure video stays playing
@@ -456,8 +500,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             style={{ display: 'none' }}
           />
 
-          {/* Unmute Button - Always visible in bottom-right corner when muted */}
-          {isMuted && (
+          {/* Unmute Button - Only visible when muted AND stream is connected/playing */}
+          {isMuted && isConnected && (
             <button
               onClick={() => {
                 if (videoRef.current) {
@@ -479,6 +523,35 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             </button>
           )}
 
+          {/* Loading/Connecting Overlay - Shown when connecting OR connected but not yet playing */}
+          {(isConnecting || (isConnected && !isPlaying)) && !error && !drmError && (
+            <div className="fixed inset-0 flex items-center justify-center bg-[#141414]/95 z-20">
+              <div className="flex flex-col items-center text-center p-8 max-w-md">
+                <div className="relative w-20 h-20 mb-6">
+                  {/* Outer spinning ring */}
+                  <div className="absolute inset-0 border-4 border-[#404040] rounded-full"></div>
+                  {/* Inner spinning ring */}
+                  <div className="absolute inset-0 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+                  {/* Center icon */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                </div>
+                <h3 className="text-white font-semibold text-xl mb-3">
+                  {isConnected ? 'Loading Stream...' : 'Connecting...'}
+                </h3>
+                <p className="text-[#a0a0a0] text-sm">
+                  {isConnected 
+                    ? 'Buffering stream content. Please wait...'
+                    : 'Please wait while we connect to the stream.'
+                  }
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Idle Overlay - Shown when not connected, not connecting, and no error */}
           {!isConnected && !isConnecting && !error && !drmError && (
             <div className="fixed inset-0 flex items-center justify-center bg-[#141414]/95">
@@ -492,12 +565,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 <p className="text-[#a0a0a0] text-sm">
                   The broadcaster has not started the stream yet. Please wait for the stream to begin.
                 </p>
-                {isConnecting && (
-                  <div className="mt-6 flex items-center gap-2 text-[#d0d0d0] text-sm">
-                    <div className="w-4 h-4 border-2 border-[#d0d0d0] border-t-transparent rounded-full animate-spin"></div>
-                    <span>Trying to connect...</span>
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -549,9 +616,17 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 <div className="absolute top-0 left-0 right-0 z-30 p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 pointer-events-auto">
-                      {isMuted && (
+                      {isMuted && isConnected && (
                         <button
-                          onClick={() => setIsMuted(false)}
+                          onClick={() => {
+                            if (videoRef.current) {
+                              videoRef.current.muted = false;
+                            }
+                            if (audioRef.current) {
+                              audioRef.current.muted = false;
+                            }
+                            setIsMuted(false);
+                          }}
                           className="px-3 py-1.5 bg-[#252525] hover:bg-[#333333] text-white text-sm rounded-lg transition-colors cursor-pointer flex items-center gap-2"
                           title="Click to unmute"
                         >
