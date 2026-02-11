@@ -15,9 +15,7 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
 
   // Auto-set fullscreen for embed mode
-  const fullscreenParams = new URLSearchParams(window.location.search);
-  const isUrlFullscreen = fullscreenParams.get('fullscreen') === 'true';
-  const showFullscreen = isEmbedMode || isUrlFullscreen;
+  const showFullscreen = isEmbedMode;
 
   if (showFullscreen) {
     return (

@@ -68,12 +68,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const { isConnected, isConnecting, error, connect, disconnect } = useWhep();
   
-  // Check if fullscreen=true in URL (for iframe embedding)
-  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
-  const isUrlFullscreen = searchParams.get('fullscreen') === 'true';
-  
-  // Auto-unmute in fullscreen/embed mode for seamless playback
-  const [isMuted, setIsMuted] = useState(isEmbedMode || isUrlFullscreen ? false : true);
+  // Auto-unmute in embed mode for seamless playback
+  const [isMuted, setIsMuted] = useState(isEmbedMode ? false : true);
   const [drmError, setDrmError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
@@ -145,56 +141,34 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // Auto-connect and auto-fullscreen if URL has ?fullscreen=true (for iframe embedding)
+  // Auto-connect and auto-fullscreen if in embed mode (for iframe embedding)
   useEffect(() => {
-    if (isUrlFullscreen) {
-      console.log('[Player] Auto-connecting and entering fullscreen mode...');
+    if (isEmbedMode) {
+      console.log('[Player] Auto-connecting and entering fullscreen mode...', { isEmbedMode, endpoint });
       // Small delay to ensure component is mounted
       const timer = setTimeout(() => {
+        console.log('[Player] Calling handleConnect...');
         handleConnect();
         setIsFullscreen(true); // Auto-enter fullscreen
       }, 200);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [endpoint]);
 
-  // Auto-connect on mount when in embed mode
+  // Watch for connection state changes and ensure stream is assigned to video element
   useEffect(() => {
-    if (isEmbedMode) {
-      console.log('[Embed Mode] Starting auto-connect...', { isConnected, isConnecting });
-      // Use setTimeout to ensure refs are attached to DOM
-      const timer = setTimeout(() => {
-        console.log('[Embed Mode] Checking refs...', {
-          videoRef: !!videoRef.current,
-          audioRef: !!audioRef.current
-        });
-        if (videoRef.current && audioRef.current) {
-          console.log('[Embed Mode] Calling handleConnect');
-          handleConnect();
-        } else {
-          console.error('[Embed Mode] Refs not available, cannot connect');
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEmbedMode]);
-
-  // Re-connect when encrypted prop changes in embed mode
-  useEffect(() => {
-    if (isEmbedMode) {
-      console.log('[Embed Mode] Encryption setting changed ', { encrypted, isConnected, isConnecting });
-      // Only reconnect if we have refs and we're not currently connecting
-      if (videoRef.current && audioRef.current && !isConnecting) {
-        const timer = setTimeout(() => {
-          console.log('[Embed Mode] Re-connecting with new encryption setting: ', encrypted);
-          handleConnect();
-        }, 100);
-        return () => clearTimeout(timer);
+    if (isConnected && videoRef.current) {
+      console.log('[Player] Connected - ensuring video stream is assigned');
+      // If video element exists but has no srcObject, it might need to be re-assigned
+      if (!videoRef.current.srcObject && videoRef.current.src === '') {
+        console.log('[Player] Video has no srcObject, connection should have assigned it');
       }
+      // Ensure video is playing
+      videoRef.current.play().catch((e) => {
+        console.warn('[Player] Video play failed:', e.message);
+      });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [encrypted]);
+  }, [isConnected]);
 
   const configureDrm = async (pc: RTCPeerConnection) => {
     // Early check: verify EME is available (catches iframe permission issues)
@@ -417,7 +391,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         <>
           <video
             ref={videoRef}
-            className="fixed inset-0 w-full h-full object-cover bg-black"
+            className="fixed inset-0 w-full h-full object-cover bg-black z-0"
             autoPlay
             playsInline
             muted={isMuted}
@@ -481,8 +455,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         </>
       ) : (
         <div className="flex flex-col gap-3 sm:gap-4">
-          {/* Encryption disabled warning - hide in fullscreen mode */}
-          {!encrypted && !isUrlFullscreen && (
+          {/* Encryption disabled warning - hide in embed mode */}
+          {!encrypted && !isEmbedMode && (
             <div className="flex items-center gap-3 px-4 py-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
               <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -495,19 +469,19 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
           )}
 
           {/* Responsive video container - adaptive aspect ratio */}
-          <div className={`relative group w-full ${isUrlFullscreen || isFullscreen ? 'fixed inset-0 m-0 p-0 rounded-none bg-black z-50' : 'bg-[#1e1e1e] rounded-lg'}`}>
+          <div className={`relative group w-full ${isEmbedMode || isFullscreen ? 'fixed inset-0 m-0 p-0 rounded-none bg-black z-50' : 'bg-[#1e1e1e] rounded-lg'}`}>
             {/* Video container - this goes fullscreen */}
             <div 
               ref={videoContainerRef}
               className={`${
-                (isUrlFullscreen || isFullscreen)
+                (isEmbedMode || isFullscreen)
                   ? 'fixed inset-0 bg-black' 
                   : ''
               }`}
-              style={isUrlFullscreen || isFullscreen ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50 } : {}}
+              style={isEmbedMode || isFullscreen ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50 } : {}}
             >
               {/* Fullscreen header */}
-              {(isFullscreen || isUrlFullscreen) && (
+              {(isFullscreen || isEmbedMode) && (
                 <div className="absolute top-0 left-0 right-0 z-30 p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 pointer-events-auto">
@@ -531,7 +505,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
 
               {/* Video element - fills entire screen in fullscreen mode */}
               <div className={`${
-                isUrlFullscreen || isFullscreen 
+                isEmbedMode || isFullscreen 
                   ? 'h-screen w-full' 
                   : 'aspect-video sm:aspect-video lg:aspect-video xl:aspect-[21/9] max-h-[40vh] sm:max-h-[50vh] lg:max-h-[60vh] xl:max-h-[70vh]'
               }`}>
@@ -607,8 +581,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             </div>
           </div>
 
-          {/* Controls Bar - Below the video player - hidden in fullscreen mode */}
-          {!isUrlFullscreen && (
+          {/* Controls Bar - Below the video player - hidden in embed mode */}
+          {!isEmbedMode && (
             <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-[#1e1e1e] rounded-lg border border-[#333333]">
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 {/* Connect/Disconnect Button */}
@@ -686,8 +660,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             </div>
           )}
 
-          {/* Debug Panel - Below the video player - Hidden in production and fullscreen mode */}
-          {!isProduction && !isEmbedMode && !isUrlFullscreen && <DebugPanel id={DEBUG_PANEL_ID} title="Player Debug Log" />}
+          {/* Debug Panel - Below the video player - Hidden in production and embed mode */}
+          {!isProduction && !isEmbedMode && <DebugPanel id={DEBUG_PANEL_ID} title="Player Debug Log" />}
         </div>
       )}
     </>
