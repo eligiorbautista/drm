@@ -2,7 +2,6 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useWhep } from '../hooks/useWhep';
 import { rtcDrmConfigure, rtcDrmOnTrack, rtcDrmEnvironments } from '../lib/rtc-drm-transform.min.js';
 import { hexToUint8Array } from '../lib/drmUtils';
-import { openEmbedPlayer } from '../lib/embedPlayer';
 import { DebugPanel } from './DebugPanel';
 
 export interface PlayerProps {
@@ -66,10 +65,12 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   console.log('Player Props Endpoint:', endpoint);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
   const { isConnected, isConnecting, error, connect, disconnect } = useWhep();
   const [isMuted, setIsMuted] = useState(isEmbedMode ? false : true);
   const [drmError, setDrmError] = useState<string | null>(null);
   const [wasConnected, setWasConnected] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
 
   // In embed mode, disable all logging for security and clean output
@@ -109,6 +110,33 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       audioRef.current.muted = isMuted;
     }
   }, [isMuted]);
+
+  // Toggle fullscreen mode using Fullscreen API - targets video only
+  const toggleFullscreen = async () => {
+    if (!videoContainerRef.current) return;
+    
+    try {
+      if (!document.fullscreenElement) {
+        await videoContainerRef.current.requestFullscreen();
+        setIsFullscreen(true);
+      } else {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    } catch (err) {
+      console.error('[Player] Fullscreen error:', err);
+    }
+  };
+
+  // Listen for fullscreen change events
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   // Track if we were previously connected to detect interruptions
   useEffect(() => {
@@ -361,14 +389,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }, videoRef.current, audioRef.current);
   };
 
-  const openEmbedPage = () => {
-    // Use the new embed player utility
-    // Only endpoint is required - DRM config (merchant, keyId, iv) comes from .env
-    openEmbedPlayer({
-      endpoint,
-      userId,
-    });
-  };
+
 
   const toggleMute = () => {
     if (videoRef.current) {
@@ -471,97 +492,128 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
 
           {/* Responsive video container - adaptive aspect ratio */}
           <div className="relative group bg-[#1e1e1e] rounded-lg overflow-hidden w-full">
-            {/* Aspect ratio container - different ratios for different screen sizes */}
-            <div className="aspect-video sm:aspect-video lg:aspect-video xl:aspect-[21/9] max-h-[40vh] sm:max-h-[50vh] lg:max-h-[60vh] xl:max-h-[70vh]">
-              <video
-                ref={videoRef}
-                className="w-full h-full object-contain"
+            {/* Video container - this is what goes fullscreen */}
+            <div 
+              ref={videoContainerRef}
+              className={`transition-all duration-300 ${
+                isFullscreen 
+                  ? 'fixed inset-0 z-50 bg-black' 
+                  : ''
+              }`}
+            >
+              {/* Fullscreen header */}
+              {isFullscreen && (
+                <div className="absolute top-0 left-0 right-0 z-30 p-4 bg-gradient-to-b from-black/60 to-transparent">
+                  <div className="flex items-center justify-between">
+                    <span className="text-white font-medium">Live Stream</span>
+                    <button
+                      onClick={toggleFullscreen}
+                      className="p-2 bg-[#252525] hover:bg-[#333333] text-white rounded-lg transition-colors cursor-pointer"
+                      title="Exit fullscreen"
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Video element - fills fullscreen when active */}
+              <div className={`${
+                isFullscreen ? 'h-screen w-full' : 'aspect-video sm:aspect-video lg:aspect-video xl:aspect-[21/9] max-h-[40vh] sm:max-h-[50vh] lg:max-h-[60vh] xl:max-h-[70vh]'
+              }`}>
+                <video
+                  ref={videoRef}
+                  className="w-full h-full object-contain"
+                  autoPlay
+                  playsInline
+                  muted={isMuted}
+                />
+              </div>
+
+              {/* Hidden audio element for DRM (required by rtc-drm-transform library) */}
+              <audio
+                ref={audioRef}
                 autoPlay
                 playsInline
                 muted={isMuted}
+                style={{ display: 'none' }}
               />
+
+              {/* Error Overlay */}
+              {(error || drmError) && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 z-20">
+                  <div className="p-4 sm:p-6 bg-[#1e1e1e]/90 border border-[#404040] rounded-lg text-center max-w-sm mx-4 backdrop-blur-sm">
+                    <div className="inline-flex items-center justify-center w-10 sm:w-12 h-10 sm:h-12 bg-[#252525] rounded-xl mb-3 border border-[#404040]">
+                      <svg className="w-5 sm:w-6 h-5 sm:h-6 text-[#a0a0a0] animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </div>
+                    <h3 className="text-white font-bold text-sm sm:text-lg mb-2">{drmError ? 'DRM Error' : 'Connection Error'}</h3>
+                    <p className="text-[#d0d0d0] text-xs sm:text-sm mb-4">{drmError || error}</p>
+                    {drmError && window.self !== window.top && (
+                      <p className="text-[#a0a0a0] text-xs mb-4 font-mono bg-[#252525]/60 p-2 rounded">
+                        &lt;iframe allow="encrypted-media; autoplay" ...&gt;
+                      </p>
+                    )}
+                    <button
+                      onClick={() => { setDrmError(null); handleConnect(); }}
+                      className="px-4 py-2 bg-white text-[#141414] hover:bg-[#e5e5e5] font-semibold rounded transition-colors shadow-lg cursor-pointer min-h-[44px]"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Connecting Overlay */}
+              {isConnecting && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/50 z-10 pointer-events-none">
+                  <div className="flex flex-col items-center">
+                    <div className="w-8 sm:w-10 h-8 sm:h-10 border-4 border-[#a0a0a0] border-t-transparent rounded-full animate-spin mb-2"></div>
+                    <span className="text-white font-medium text-sm sm:text-base">Connecting...</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Idle Overlay - Shown when not connected, not connecting, and no error */}
+              {!isConnected && !isConnecting && !error && !drmError && !isInterrupted && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 pointer-events-none">
+                  <div className="flex flex-col items-center text-center p-4 sm:p-8">
+                    <div className="inline-flex items-center justify-center w-12 sm:w-16 h-12 sm:h-16 bg-[#252525] rounded-xl sm:rounded-2xl mb-3 sm:mb-4 border border-[#404040]">
+                      <svg className="w-6 sm:w-8 h-6 sm:h-8 text-[#a0a0a0]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-white font-semibold text-sm sm:text-lg mb-2">Not Connected</h3>
+                    <p className="text-[#a0a0a0] text-xs sm:text-sm max-w-xs">Click "Connect" to start viewing the stream</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Stream Interrupted Overlay */}
+              {isInterrupted && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 z-10">
+                  <div className="flex flex-col items-center text-center p-4 sm:p-8">
+                    <div className="inline-flex items-center justify-center w-12 sm:w-16 h-12 sm:h-16 bg-[#252525] rounded-xl sm:rounded-2xl mb-3 sm:mb-4 border border-[#404040]">
+                      <svg className="w-6 sm:w-8 h-6 sm:h-8 text-[#a0a0a0]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                      </svg>
+                    </div>
+                    <h3 className="text-white font-semibold text-sm sm:text-lg mb-2">Stream Interrupted</h3>
+                    <p className="text-[#a0a0a0] text-xs sm:text-sm max-w-xs mb-3 sm:mb-4">The broadcast has been stopped or interrupted</p>
+                    <button
+                      onClick={handleConnect}
+                      className="px-4 py-2 bg-white text-[#141414] hover:bg-[#e5e5e5] font-semibold rounded transition-colors shadow-lg cursor-pointer min-h-[44px]"
+                    >
+                      Reconnect
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            {/* Hidden audio element for DRM (required by rtc-drm-transform library) */}
-            <audio
-              ref={audioRef}
-              autoPlay
-              playsInline
-              muted={isMuted}
-              style={{ display: 'none' }}
-            />
-
-            {/* Error Overlay */}
-            {(error || drmError) && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 z-20">
-                <div className="p-4 sm:p-6 bg-[#1e1e1e]/90 border border-[#404040] rounded-lg text-center max-w-sm mx-4 backdrop-blur-sm">
-                  <div className="inline-flex items-center justify-center w-10 sm:w-12 h-10 sm:h-12 bg-[#252525] rounded-xl mb-3 border border-[#404040]">
-                    <svg className="w-5 sm:w-6 h-5 sm:h-6 text-[#a0a0a0] animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  </div>
-                  <h3 className="text-white font-bold text-sm sm:text-lg mb-2">{drmError ? 'DRM Error' : 'Connection Error'}</h3>
-                  <p className="text-[#d0d0d0] text-xs sm:text-sm mb-4">{drmError || error}</p>
-                  {drmError && window.self !== window.top && (
-                    <p className="text-[#a0a0a0] text-xs mb-4 font-mono bg-[#252525]/60 p-2 rounded">
-                      &lt;iframe allow="encrypted-media; autoplay" ...&gt;
-                    </p>
-                  )}
-                  <button
-                    onClick={() => { setDrmError(null); handleConnect(); }}
-                    className="px-4 py-2 bg-white text-[#141414] hover:bg-[#e5e5e5] font-semibold rounded transition-colors shadow-lg cursor-pointer min-h-[44px]"
-                  >
-                    Try Again
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Connecting Overlay */}
-            {isConnecting && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/50 z-10 pointer-events-none">
-                <div className="flex flex-col items-center">
-                  <div className="w-8 sm:w-10 h-8 sm:h-10 border-4 border-[#a0a0a0] border-t-transparent rounded-full animate-spin mb-2"></div>
-                  <span className="text-white font-medium text-sm sm:text-base">Connecting...</span>
-                </div>
-              </div>
-            )}
-
-            {/* Idle Overlay - Shown when not connected, not connecting, and no error */}
-            {!isConnected && !isConnecting && !error && !drmError && !isInterrupted && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 pointer-events-none">
-                <div className="flex flex-col items-center text-center p-4 sm:p-8">
-                  <div className="inline-flex items-center justify-center w-12 sm:w-16 h-12 sm:h-16 bg-[#252525] rounded-xl sm:rounded-2xl mb-3 sm:mb-4 border border-[#404040]">
-                    <svg className="w-6 sm:w-8 h-6 sm:h-8 text-[#a0a0a0]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-white font-semibold text-sm sm:text-lg mb-2">Not Connected</h3>
-                  <p className="text-[#a0a0a0] text-xs sm:text-sm max-w-xs">Click "Connect" to start viewing the stream</p>
-                </div>
-              </div>
-            )}
-
-            {/* Stream Interrupted Overlay */}
-            {isInterrupted && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 z-10">
-                <div className="flex flex-col items-center text-center p-4 sm:p-8">
-                  <div className="inline-flex items-center justify-center w-12 sm:w-16 h-12 sm:h-16 bg-[#252525] rounded-xl sm:rounded-2xl mb-3 sm:mb-4 border border-[#404040]">
-                    <svg className="w-6 sm:w-8 h-6 sm:h-8 text-[#a0a0a0]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                    </svg>
-                  </div>
-                  <h3 className="text-white font-semibold text-sm sm:text-lg mb-2">Stream Interrupted</h3>
-                  <p className="text-[#a0a0a0] text-xs sm:text-sm max-w-xs mb-3 sm:mb-4">The broadcast has been stopped or interrupted</p>
-                  <button
-                    onClick={handleConnect}
-                    className="px-4 py-2 bg-white text-[#141414] hover:bg-[#e5e5e5] font-semibold rounded transition-colors shadow-lg cursor-pointer min-h-[44px]"
-                  >
-                    Reconnect
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Controls Bar - Below the video player */}
@@ -589,18 +641,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 </button>
               )}
 
-              {/* Open Embed Button - hidden on small mobile */}
-              <button
-                onClick={openEmbedPage}
-                className="hidden sm:flex items-center gap-2 px-3 py-2.5 bg-[#252525] hover:bg-[#333333] text-white text-sm font-medium rounded-lg transition-colors border border-[#404040] cursor-pointer min-h-[48px]"
-                title="Open fullscreen embed in new window"
-              >
-                <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-                <span>Open Embed</span>
-              </button>
-
               {/* Live Indicator */}
               <div className="flex items-center gap-2 bg-[#252525] px-3 py-1.5 rounded-full border border-[#404040]">
                 <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-white/50'}`}></span>
@@ -612,16 +652,25 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
 
             {/* Right side controls */}
             <div className="flex items-center gap-2">
-              {/* Open Embed for mobile */}
-              <button
-                onClick={openEmbedPage}
-                className="sm:hidden p-2.5 bg-[#252525] hover:bg-[#333333] text-white rounded-lg border border-[#404040] cursor-pointer min-w-[48px] min-h-[48px] flex items-center justify-center"
-                title="Open fullscreen embed"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                </svg>
-              </button>
+              {/* Fullscreen Button */}
+              {!isEmbedMode && (
+                <button
+                  onClick={toggleFullscreen}
+                  className="p-2.5 bg-[#252525] hover:bg-[#333333] text-white rounded-lg border border-[#404040] transition-colors cursor-pointer min-w-[48px] min-h-[48px] flex items-center justify-center"
+                  title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                  aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                >
+                  {isFullscreen ? (
+                    <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
+                  )}
+                </button>
+              )}
 
               {/* Mute Button */}
               <button
