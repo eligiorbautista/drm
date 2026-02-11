@@ -166,9 +166,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
   }, [isConnected]);
 
-  // Check if stream was interrupted (was connected, now disconnected with no error)
-  const isInterrupted = wasConnected && !isConnected && !isConnecting && !error && !drmError;
-
   // Auto-connect on mount when in embed mode
   useEffect(() => {
     if (isEmbedMode) {
