@@ -1,21 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
 import { rtcDrmConfigure, rtcDrmOnTrack, rtcDrmEnvironments } from '../lib/rtc-drm-transform.min.js';
-
-interface EmbedPlayerPageProps {
-  searchParams?: URLSearchParams;
-}
+import apiClient from '../lib/api';
 
 /**
- * Helper to decode config from window.name (base64 encoded JSON)
+ * Helper to read config from URL hash (base64 encoded)
  */
-function getEmbeddedConfig(): any {
+function getHashConfig(): any {
   try {
-    if (typeof window !== 'undefined' && window.name) {
-      const decoded = atob(window.name);
-      return JSON.parse(decoded);
+    if (typeof window !== 'undefined' && window.location.hash) {
+      // Get hash without #
+      const hash = window.location.hash.substring(1);
+      console.log('[Embed Player] Hash found:', hash);
+      
+      // Decode base64
+      const configString = atob(hash);
+      const config = JSON.parse(configString);
+      
+      console.log('[Embed Player] Parsed config from hash:', {
+        ...config,
+        keyId: config.keyId ? '[REDACTED]' : '',
+        iv: config.iv ? '[REDACTED]' : '',
+      });
+      
+      return config;
+    } else {
+      console.log('[Embed Player] No hash in URL');
     }
   } catch (e) {
-    console.error('[Embed Player] Failed to decode embedded config:', e);
+    console.error('[Embed Player] Failed to parse config from hash:', e);
   }
   return null;
 }
@@ -23,33 +35,111 @@ function getEmbeddedConfig(): any {
 /**
  * Embed Player Page Component
  * This page serves as an embeddable player that can be opened in a new window or iframe.
- * Configuration comes from:
- * 1. window.name (base64 encoded) - for secure/embedded mode
- * 2. URL search parameters - for direct URL access
+ * Configuration comes from URL hash (base64 encoded) - for example: /embed#eyJlbmRwb2...
  */
+interface EmbedPlayerPageProps {
+  searchParams?: URLSearchParams;
+}
+
 export function EmbedPlayerPage({ searchParams }: EmbedPlayerPageProps = {}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const connectionRef = useRef<{ pc: RTCPeerConnection | null; stream: MediaStream | null }>({ pc: null, stream: null });
+  const isInitializedRef = useRef(false);
+  const configRef = useRef<any>(null);  // Store config persistently across re-renders
   const [isMuted, setIsMuted] = useState(true);
   const [status, setStatus] = useState<'loading' | 'connected' | 'error' | 'offline'>('loading');
   const [errorMsg, setErrorMsg] = useState('');
+  const [drmEnabled, setDrmEnabled] = useState(true);  // Default to true
+  const [loading, setLoading] = useState(true);  // Loading state for DRM setting
   
-  // Parse configuration from URL params (used when accessed directly via URL)
-  const params = typeof window !== 'undefined' ? searchParams || new URLSearchParams(window.location.search) : new URLSearchParams();
+  // Fetch DRM enabled setting from database (public endpoint, no auth needed)
+  useEffect(() => {
+    const fetchDrmSetting = async () => {
+      try {
+        console.log('[Embed Player] Fetching DRM enabled setting from database...');
+        const response = await fetch(`${import.meta.env.VITE_DRM_BACKEND_URL}/api/settings/encryption/enabled`);
+        if (response.ok) {
+          const data = await response.json();
+          setDrmEnabled(data.enabled);
+          console.log('[Embed Player] DRM enabled setting from database:', data.enabled);
+        } else {
+          console.warn('[Embed Player] Failed to fetch DRM setting, using default: true');
+          setDrmEnabled(true);
+        }
+      } catch (err) {
+        console.error('[Embed Player] Error fetching DRM setting:', err);
+        setDrmEnabled(true);  // Default to true on error
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchDrmSetting();
+  }, []);
   
-  // Try to get embedded config first (from window.name), then fall back to URL params
-  const embeddedConfig = getEmbeddedConfig();
+  // Try to get config from URL hash first, then from URL params
+  // Only read once - store in ref to persist across re-renders
+  if (!configRef.current) {
+    const hashConfig = getHashConfig();
+    
+    if (hashConfig) {
+      // Merge with env defaults - endpoint and userId from hash, everything else from .env
+      // Use database DRM setting
+      configRef.current = {
+        endpoint: hashConfig.endpoint || (import.meta.env.VITE_CLOUDFLARE_STREAM_DOMAIN + import.meta.env.VITE_WHEP_ENDPOINT_DEFAULT),
+        merchant: import.meta.env.VITE_DRM_MERCHANT || '',
+        userId: hashConfig.userId || 'embed-user',
+        encrypted: drmEnabled,  // Use database setting
+        keyId: import.meta.env.VITE_DRM_KEY_ID || '',
+        iv: import.meta.env.VITE_DRM_IV || '',
+      };
+    } else {
+      // Fallback to URL params (for direct URL access)
+      const params = typeof window !== 'undefined' ? searchParams || new URLSearchParams(window.location.search) : new URLSearchParams();
+      configRef.current = {
+        endpoint: params.get('endpoint') || (import.meta.env.VITE_CLOUDFLARE_STREAM_DOMAIN + import.meta.env.VITE_WHEP_ENDPOINT_DEFAULT),
+        merchant: params.get('merchant') || import.meta.env.VITE_DRM_MERCHANT || '',
+        userId: params.get('userId') || 'embed-user',
+        encrypted: params.get('encrypted') !== 'false' ? drmEnabled : false,  // Use database setting
+        keyId: params.get('keyId') || import.meta.env.VITE_DRM_KEY_ID || '',
+        iv: params.get('iv') || import.meta.env.VITE_DRM_IV || '',
+      };
+    }
+  }
   
-  const config = embeddedConfig || {
-    endpoint: params.get('endpoint') || '',
-    merchant: params.get('merchant') || '',
-    userId: params.get('userId') || 'embed-user',
-    encrypted: params.get('encrypted') !== 'false',
-    keyId: params.get('keyId') || '',
-    iv: params.get('iv') || '',
-  };
+  const config = configRef.current;
+  
+  console.log('[Embed Player] Render with config:', {
+    endpoint: config.endpoint,
+    merchant: config.merchant,
+    userId: config.userId,
+    encrypted: config.encrypted,
+    encryptionSource: 'Database (public API /api/settings/encryption/enabled)',
+    hasKeyId: !!config.keyId,
+    hasIv: !!config.iv,
+  });
 
   useEffect(() => {
+    console.log('[Embed Player] useEffect triggered');
+    
+    // Only initialize once
+    if (isInitializedRef.current) {
+      console.log('[Embed Player] Already initialized, skipping');
+      return;
+    }
+
+    // Check if we have required config
+    if (!config.endpoint) {
+      console.log('[Embed Player] No endpoint in config:', config);
+      setStatus('error');
+      setErrorMsg('No WHEP endpoint provided. Please provide an endpoint URL.');
+      return;
+    }
+
+    console.log('[Embed Player] Starting initialization with endpoint:', config.endpoint);
+    isInitializedRef.current = true;
+    
     console.log('[Embed Player] Initializing with config:', {
       ...config,
       keyId: config.keyId ? '[REDACTED]' : '',
@@ -60,8 +150,15 @@ export function EmbedPlayerPage({ searchParams }: EmbedPlayerPageProps = {}) {
     let stream: MediaStream | null = null;
 
     const connect = async () => {
+      // Don't connect if already connected or connecting
+      if (connectionRef.current.pc) {
+        console.log('[Embed Player] Already connected, skipping');
+        return;
+      }
+
       try {
         setStatus('loading');
+        console.log('[Embed Player] Starting connection to:', config.endpoint);
         
         pc = new RTCPeerConnection({
           bundlePolicy: 'max-bundle',
@@ -69,6 +166,15 @@ export function EmbedPlayerPage({ searchParams }: EmbedPlayerPageProps = {}) {
           // @ts-ignore - encodedInsertableStreams is a non-standard API
           encodedInsertableStreams: config.encrypted,
         });
+
+        // Check if connection was closed immediately
+        if (pc.signalingState === 'closed') {
+          console.error('[Embed Player] RTCPeerConnection is closed immediately after creation');
+          throw new Error('RTCPeerConnection failed to initialize');
+        }
+
+        // Store the connection in ref
+        connectionRef.current.pc = pc;
 
         pc.addTransceiver('video', { direction: 'recvonly' });
         pc.addTransceiver('audio', { direction: 'recvonly' });
@@ -167,12 +273,19 @@ export function EmbedPlayerPage({ searchParams }: EmbedPlayerPageProps = {}) {
           });
 
           pc.addEventListener('track', (event) => {
+            console.log('[DRM] Track received:', event.track.kind, event.track.label);
             try {
               rtcDrmOnTrack(event);
               if (event.track.kind === 'video') {
-                videoElement.play().catch(console.warn);
+                console.log('[DRM] Playing video element');
+                videoElement.play().catch((err) => {
+                  console.warn('[DRM] Video play error:', err);
+                });
               } else if (event.track.kind === 'audio') {
-                audioElement.play().catch(console.warn);
+                console.log('[DRM] Playing audio element');
+                audioElement.play().catch((err) => {
+                  console.warn('[DRM] Audio play error:', err);
+                });
               }
             } catch (err) {
               console.error('[DRM] Track error:', err);
@@ -180,39 +293,82 @@ export function EmbedPlayerPage({ searchParams }: EmbedPlayerPageProps = {}) {
           });
         } else {
           // Non-DRM mode
+          console.log('[Embed Player] Starting in non-DRM mode');
           stream = new MediaStream();
           pc.addEventListener('track', (event) => {
+            console.log('[Embed Player] Track received:', event.track.kind, event.track.label);
             if (!stream) {
               stream = new MediaStream();
             }
             stream.addTrack(event.track);
             if (videoRef.current) {
+              console.log('[Embed Player] Setting video source object');
               videoRef.current.srcObject = stream;
-              videoRef.current.play().catch(console.warn);
+              videoRef.current.play().catch((err) => {
+                console.warn('[Embed Player] Play error:', err);
+              });
             }
           });
         }
 
         // Connection state handler
         pc.addEventListener('connectionstatechange', () => {
+          console.log('[Embed Player] Connection state changed:', pc?.connectionState);
           if (pc?.connectionState === 'connected') {
+            console.log('[Embed Player] Successfully connected!');
             setStatus('connected');
           } else if (pc?.connectionState === 'disconnected' || pc?.connectionState === 'failed') {
+            console.log('[Embed Player] Connection failed or disconnected');
             setStatus('offline');
           }
         });
 
-        // ICE gathering
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+        // Log ICE connection state changes
+        pc.addEventListener('iceconnectionstatechange', () => {
+          console.log('[Embed Player] ICE connection state:', pc?.iceConnectionState);
+        });
 
-        await new Promise<void>((resolve) => {
+        // ICE gathering
+        console.log('[Embed Player] Creating WebRTC offer...');
+        
+        // Check connection before creating offer
+        if (pc.signalingState === 'closed') {
+          console.error('[Embed Player] RTCPeerConnection is closed before createOffer');
+          throw new Error('RTCPeerConnection closed');
+        }
+        
+        const offer = await pc.createOffer();
+        
+        // Check connection after operation
+        if (pc.signalingState === 'closed') {
+          console.error('[Embed Player] RTCPeerConnection closed during createOffer');
+          throw new Error('RTCPeerConnection closed');
+        }
+        
+        console.log('[Embed Player] Offer created, setting local description...');
+        await pc.setLocalDescription(offer);
+        console.log('[Embed Player] Local description set, ICE gathering state:', pc.iceGatheringState);
+
+        console.log('[Embed Player] Waiting for ICE gathering to complete...');
+        await new Promise<void>((resolve, reject) => {
+          // Check if connection is already closed
+          if (pc?.signalingState === 'closed') {
+            reject(new Error('RTCPeerConnection closed before ICE gathering'));
+            return;
+          }
+          
           if (pc?.iceGatheringState === 'complete') {
+            console.log('[Embed Player] ICE gathering already complete');
             resolve();
           } else {
             const checkState = () => {
-              if (pc?.iceGatheringState === 'complete') {
+              console.log('[Embed Player] ICE gathering state changed:', pc?.iceGatheringState);
+              if (pc?.signalingState === 'closed') {
                 pc?.removeEventListener('icegatheringstatechange', checkState);
+                reject(new Error('RTCPeerConnection closed during ICE gathering'));
+              } else if (pc?.iceGatheringState === 'complete') {
+                pc?.removeEventListener('icegatheringstatechange', checkState);
+                console.log('[Embed Player] ICE gathering complete');
                 resolve();
               }
             };
@@ -220,18 +376,23 @@ export function EmbedPlayerPage({ searchParams }: EmbedPlayerPageProps = {}) {
           }
         });
 
-        // Send WHEP request
+        console.log('[Embed Player] Sending WHEP request to:', config.endpoint);
         const response = await fetch(config.endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/sdp' },
           body: pc.localDescription?.sdp,
         });
 
+        console.log('[Embed Player] WHEP response status:', response.status, response.statusText);
+
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          const errorText = await response.text();
+          console.error('[Embed Player] WHEP error response:', errorText);
+          throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
         }
 
         const answerSdp = await response.text();
+        console.log('[Embed Player] Received SDP answer, length:', answerSdp.length);
         await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
 
       } catch (err) {
@@ -245,11 +406,17 @@ export function EmbedPlayerPage({ searchParams }: EmbedPlayerPageProps = {}) {
 
     // Cleanup
     return () => {
-      if (pc) {
-        pc.close();
+      console.log('[Embed Player] Cleanup: closing connection');
+      isInitializedRef.current = false; // Reset initialization flag
+      
+      if (connectionRef.current.pc) {
+        console.log('[Embed Player] Closing RTCPeerConnection');
+        connectionRef.current.pc.close();
+        connectionRef.current.pc = null;
       }
+      connectionRef.current.stream = null;
     };
-  }, []); // Empty deps - run once on mount
+  }, [config.endpoint]); // Only re-run if endpoint changes
 
   // Mute handling
   useEffect(() => {

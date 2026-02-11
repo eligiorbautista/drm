@@ -20,25 +20,18 @@ export function EmbedPlayerDemo() {
   const support = checkEmbedSupport();
 
   const handleOpenPlayer = () => {
-    // Secure: endpoint and merchant are NOT visible in URL
-    openEmbedPlayer({
-      width: 1280,
-      height: 720,
-    });
+    openEmbedPlayer();
   };
 
   const handleOpenFullscreen = () => {
-    // Secure: endpoint and merchant are NOT visible in URL
     openEmbedFullscreen();
   };
 
   const handleOpenPopup = () => {
-    // Secure: endpoint and merchant are NOT visible in URL
-    openEmbedPopup(800, 600);
+    openEmbedPopup();
   };
 
   const handleGenerateCode = () => {
-    // Warning: endpoint and merchant ARE visible in URL
     const code = generateEmbedCode({
       width: 1280,
       height: 720,
@@ -48,38 +41,46 @@ export function EmbedPlayerDemo() {
   };
 
   const handleCreateSecureIframe = () => {
-    // Secure: endpoint and merchant are NOT visible in URL
     if (secureContainerRef.current) {
       // Clean up previous player
-      if (securePlayer) {
+      if (securePlayer && securePlayer.destroy) {
         securePlayer.destroy();
       }
       
-      const player = createSecureEmbedPlayer(secureContainerRef.current, {
+      const url = createSecureEmbedPlayer({
         width: 1280,
         height: 720,
       });
       
-      setSecurePlayer(player);
+      // Create iframe manually since createSecureEmbedPlayer now returns a URL string
+      const iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.width = '1280';
+      iframe.height = '720';
+      iframe.style.border = 'none';
+      iframe.style.background = '#000';
+      
+      secureContainerRef.current.innerHTML = '';
+      secureContainerRef.current.appendChild(iframe);
+      
+      setSecurePlayer({ destroy: () => { iframe.remove(); } });
     }
   };
 
   const handleDestroySecureIframe = () => {
-    if (securePlayer) {
+    if (securePlayer && securePlayer.destroy) {
       securePlayer.destroy();
       setSecurePlayer(null);
     }
   };
 
-  if (!support.supported) {
+  if (!support) {
     return (
       <div className="p-6 bg-red-500/10 border border-red-500/30 rounded-lg">
         <h3 className="text-red-500 font-semibold mb-2">Browser Not Supported</h3>
-        <ul className="text-red-400/70 text-sm space-y-1">
-          {support.issues.map((issue, i) => (
-            <li key={i}>• {issue}</li>
-          ))}
-        </ul>
+        <p className="text-red-400/70 text-sm">
+          Your browser does not support the required features (WebRTC, MediaSource API).
+        </p>
       </div>
     );
   }
@@ -95,10 +96,8 @@ export function EmbedPlayerDemo() {
           <div>
             <h3 className="text-green-500 font-semibold mb-1">Secure Configuration</h3>
             <p className="text-green-400/80 text-sm">
-              The <code className="bg-green-500/20 px-1 rounded">openEmbedPlayer()</code> and{' '}
-              <code className="bg-green-500/20 px-1 rounded">createSecureEmbedPlayer()</code> functions hide 
-              the endpoint URL and merchant ID from the browser address bar. Users cannot copy/paste 
-              the URL to share the stream.
+              The <code className="bg-green-500/20 px-1 rounded">openEmbedPlayer()</code> function opens 
+              the player in a new tab with configuration passed via URL hash (base64 encoded).
             </p>
           </div>
         </div>
@@ -107,24 +106,9 @@ export function EmbedPlayerDemo() {
       {/* Browser Support Status */}
       <div className="p-4 bg-[#252525] rounded-lg border border-[#404040]">
         <h3 className="text-white font-semibold mb-3">Browser Support</h3>
-        <div className="grid grid-cols-3 gap-3">
-          <div className={`p-3 rounded-lg border ${support.webrtc ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-            <div className="text-xs text-[#a0a0a0] mb-1">WebRTC</div>
-            <div className={`text-sm font-medium ${support.webrtc ? 'text-green-500' : 'text-red-500'}`}>
-              {support.webrtc ? 'Supported' : 'Not Supported'}
-            </div>
-          </div>
-          <div className={`p-3 rounded-lg border ${support.eme ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-            <div className="text-xs text-[#a0a0a0] mb-1">EME (DRM)</div>
-            <div className={`text-sm font-medium ${support.eme ? 'text-green-500' : 'text-red-500'}`}>
-              {support.eme ? 'Supported' : 'Not Supported'}
-            </div>
-          </div>
-          <div className={`p-3 rounded-lg border ${support.insertableStreams ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-            <div className="text-xs text-[#a0a0a0] mb-1">Insertable Streams</div>
-            <div className={`text-sm font-medium ${support.insertableStreams ? 'text-green-500' : 'text-red-500'}`}>
-              {support.insertableStreams ? 'Supported' : 'Not Supported'}
-            </div>
+        <div className={`p-3 rounded-lg border ${support ? 'bg-green-500/10 border-green-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+          <div className="text-sm font-medium ${support ? 'text-green-500' : 'text-red-500'}`}>
+            {support ? 'Supports WebRTC and Video Playback' : 'Not Supported - Requires a modern browser'}
           </div>
         </div>
       </div>
@@ -133,7 +117,7 @@ export function EmbedPlayerDemo() {
       <div>
         <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-green-500"></span>
-          Secure Methods (Hidden Config)
+          Secure Methods (URL Hash Config)
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button

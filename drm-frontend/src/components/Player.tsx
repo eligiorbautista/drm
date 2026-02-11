@@ -362,15 +362,11 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   };
 
   const openEmbedPage = () => {
-    // Use the new embed player utility with current player configuration
+    // Use the new embed player utility
+    // Only endpoint is required - DRM config (merchant, keyId, iv) comes from .env
     openEmbedPlayer({
       endpoint,
-      merchant,
       userId,
-      encrypted,
-      width: 1280,
-      height: 720,
-      title: 'DRM Stream Player',
     });
   };
 
