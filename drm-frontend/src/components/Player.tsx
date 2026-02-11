@@ -439,12 +439,25 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     <>
       {isEmbedMode ? (
         <>
+          {/* Video element with tap-to-play functionality */}
           <video
             ref={videoRef}
             className="fixed inset-0 w-full h-full object-cover bg-black z-0"
             autoPlay
             playsInline
             muted={isMuted}
+            onClick={() => {
+              if (videoRef.current) {
+                if (videoRef.current.paused) {
+                  videoRef.current.play()
+                    .then(() => {
+                      console.log('[Player] Tap to play succeeded');
+                      setIsMuted(false);
+                    })
+                    .catch((e) => console.warn('[Player] Tap to play failed:', e.message));
+                }
+              }
+            }}
           />
           {/* Hidden audio element for DRM (required by rtc-drm-transform library) */}
           <audio
@@ -455,12 +468,29 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             style={{ display: 'none' }}
           />
 
-          {/* Loading Overlay - Shown when connecting */}
-          {isConnecting && (
-            <div className="fixed inset-0 flex items-center justify-center bg-[#141414]/80 z-10 pointer-events-none">
-              <div className="flex flex-col items-center">
-                <div className="w-12 h-12 border-4 border-[#a0a0a0] border-t-transparent rounded-full animate-spin mb-4"></div>
-                <span className="text-white font-medium">Connecting to stream...</span>
+          {/* Play Button Overlay - Show when connected but video might be paused */}
+          {isConnected && (
+            <div 
+              className="fixed inset-0 z-20 cursor-pointer flex items-center justify-center"
+              onClick={() => {
+                if (videoRef.current) {
+                  videoRef.current.play()
+                    .then(() => {
+                      console.log('[Player] Overlay tap play succeeded');
+                      setIsMuted(false);
+                    })
+                    .catch((e) => console.warn('[Player] Overlay play failed:', e.message));
+                }
+              }}
+            >
+              {/* Play button that appears over the video when needed */}
+              <div className="absolute inset-0 bg-black/20 pointer-events-none"></div>
+              <div className="relative pointer-events-auto">
+                <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-2 border-white/50 hover:bg-white/30 hover:scale-110 transition-all">
+                  <svg className="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
+                </div>
               </div>
             </div>
           )}
