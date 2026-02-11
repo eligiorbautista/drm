@@ -500,8 +500,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             style={{ display: 'none' }}
           />
 
-          {/* Unmute Button - Only visible when muted AND stream is connected/playing */}
-          {isMuted && isConnected && (
+          {/* Unmute Button - Only visible when loader is gone (stream is playing) */}
+          {isMuted && isPlaying && !isConnecting && !error && !drmError && (
             <button
               onClick={() => {
                 if (videoRef.current) {
@@ -616,7 +616,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 <div className="absolute top-0 left-0 right-0 z-30 p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 pointer-events-auto">
-                      {isMuted && isConnected && (
+                      {isMuted && isPlaying && !isConnecting && !error && !drmError && (
                         <button
                           onClick={() => {
                             if (videoRef.current) {
