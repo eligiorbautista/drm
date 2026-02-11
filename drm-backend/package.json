@@ -4,8 +4,8 @@
   "description": "Backend server for SB's DRM callback authorization and token generation",
   "main": "src/index.js",
   "scripts": {
-    "start": "npx prisma migrate deploy && node src/index.js",
-    "dev": "npx prisma migrate deploy && nodemon src/index.js",
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
     "build": "prisma generate",
     "vercel-dev": "vercel dev",
     "lint": "eslint src/",

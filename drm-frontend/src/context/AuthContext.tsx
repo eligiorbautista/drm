@@ -31,11 +31,6 @@ interface AuthContextType {
 
   // Actions
   login: (email: string, password: string) => Promise<void>;
-  register: (data: {
-    email: string;
-    name: string;
-    password: string;
-  }) => Promise<void>;
   logout: () => Promise<void>;
   refreshSession: () => Promise<void>;
   clearError: () => void;
@@ -278,28 +273,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [scheduleRefresh]);
 
-  // Register
-  const register = useCallback(async (data: {
-    email: string;
-    name: string;
-    password: string;
-  }) => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      await api.register(data);
-      // Auto-login after registration
-      await login(data.email, data.password);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Registration failed';
-      setError(message);
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [login]);
-
   // Logout
   const logout = useCallback(async () => {
     try {
@@ -356,7 +329,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading,
     error,
     login,
-    register,
     logout,
     refreshSession,
     clearError,

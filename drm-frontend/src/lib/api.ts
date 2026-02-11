@@ -233,17 +233,6 @@ class ApiClient {
   // ============================================================================
   // Authentication
   // ============================================================================
-  async register(data: {
-    email: string;
-    name: string;
-    password: string;
-  }): Promise<{ user: User; message: string }> {
-    return this.request('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
   async login(data: {
     email: string;
     password: string;

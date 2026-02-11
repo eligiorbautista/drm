@@ -431,8 +431,12 @@ export function SettingsPage() {
                   <span>Credential</span>
                 </div>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
+                  <span className="text-white">Authentication:</span>
+                  <span>Session Token (JWT)</span>
+                </div>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
                   <span className="text-white">Security:</span>
-                  <span>bcrypt hashed</span>
+                  <span>Encrypted</span>
                 </div>
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1">
                   <span className="text-white">Category:</span>
