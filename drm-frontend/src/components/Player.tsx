@@ -67,7 +67,13 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const { isConnected, isConnecting, error, connect, disconnect } = useWhep();
-  const [isMuted, setIsMuted] = useState(isEmbedMode ? false : true);
+  
+  // Check if fullscreen=true in URL (for iframe embedding)
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const isUrlFullscreen = searchParams.get('fullscreen') === 'true';
+  
+  // Auto-unmute in fullscreen/embed mode for seamless playback
+  const [isMuted, setIsMuted] = useState(isEmbedMode || isUrlFullscreen ? false : true);
   const [drmError, setDrmError] = useState<string | null>(null);
   const [wasConnected, setWasConnected] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -111,7 +117,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
   }, [isMuted]);
 
-  // Toggle fullscreen mode using Fullscreen API - targets video only
+  // Toggle fullscreen mode using Fullscreen API with CSS fallback for iframe compatibility
   const toggleFullscreen = async () => {
     if (!videoContainerRef.current) return;
     
@@ -125,6 +131,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       }
     } catch (err) {
       console.error('[Player] Fullscreen error:', err);
+      // Fallback: toggle CSS-based fullscreen for iframe compatibility
+      setIsFullscreen(!isFullscreen);
     }
   };
 
@@ -136,6 +144,19 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  // Auto-connect and auto-fullscreen if URL has ?fullscreen=true (for iframe embedding)
+  useEffect(() => {
+    if (isUrlFullscreen) {
+      console.log('[Player] Auto-connecting and entering fullscreen mode...');
+      // Small delay to ensure component is mounted
+      const timer = setTimeout(() => {
+        handleConnect();
+        setIsFullscreen(true); // Auto-enter fullscreen
+      }, 200);
+      return () => clearTimeout(timer);
+    }
   }, []);
 
   // Track if we were previously connected to detect interruptions
@@ -477,8 +498,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         </>
       ) : (
         <div className="flex flex-col gap-3 sm:gap-4">
-          {/* Encryption disabled warning */}
-          {!encrypted && (
+          {/* Encryption disabled warning - hide in fullscreen mode */}
+          {!encrypted && !isUrlFullscreen && (
             <div className="flex items-center gap-3 px-4 py-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
               <svg className="w-5 h-5 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -491,46 +512,52 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
           )}
 
           {/* Responsive video container - adaptive aspect ratio */}
-          <div className="relative group bg-[#1e1e1e] rounded-lg overflow-hidden w-full">
-            {/* Video container - this is what goes fullscreen */}
+          <div className={`relative group w-full ${isUrlFullscreen || isFullscreen ? 'fixed inset-0 m-0 p-0 rounded-none bg-black z-50' : 'bg-[#1e1e1e] rounded-lg'}`}>
+            {/* Video container - this goes fullscreen */}
             <div 
               ref={videoContainerRef}
-              className={`transition-all duration-300 ${
-                isFullscreen 
-                  ? 'fixed inset-0 z-50 bg-black' 
+              className={`${
+                (isUrlFullscreen || isFullscreen)
+                  ? 'fixed inset-0 bg-black' 
                   : ''
               }`}
+              style={isUrlFullscreen || isFullscreen ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50 } : {}}
             >
               {/* Fullscreen header */}
-              {isFullscreen && (
-                <div className="absolute top-0 left-0 right-0 z-30 p-4 bg-gradient-to-b from-black/60 to-transparent">
+              {(isFullscreen || isUrlFullscreen) && (
+                <div className="absolute top-0 left-0 right-0 z-30 p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
                   <div className="flex items-center justify-between">
-                    <span className="text-white font-medium">Live Stream</span>
-                    <button
-                      onClick={toggleFullscreen}
-                      className="p-2 bg-[#252525] hover:bg-[#333333] text-white rounded-lg transition-colors cursor-pointer"
-                      title="Exit fullscreen"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
+                    <div className="flex items-center gap-3 pointer-events-auto">
+                      {isMuted && (
+                        <button
+                          onClick={() => setIsMuted(false)}
+                          className="px-3 py-1.5 bg-[#252525] hover:bg-[#333333] text-white text-sm rounded-lg transition-colors cursor-pointer flex items-center gap-2"
+                          title="Click to unmute"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                          </svg>
+                          <span>Tap to unmute</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* Video element - fills fullscreen when active */}
-              <div className={`${
-                isFullscreen ? 'h-screen w-full' : 'aspect-video sm:aspect-video lg:aspect-video xl:aspect-[21/9] max-h-[40vh] sm:max-h-[50vh] lg:max-h-[60vh] xl:max-h-[70vh]'
-              }`}>
-                <video
-                  ref={videoRef}
-                  className="w-full h-full object-contain"
-                  autoPlay
-                  playsInline
-                  muted={isMuted}
-                />
-              </div>
+              {/* Video element - fills entire screen in fullscreen mode */}
+              <video
+                ref={videoRef}
+                className={`${
+                  (isUrlFullscreen || isFullscreen) 
+                    ? 'fixed inset-0 w-full h-full object-cover' 
+                    : 'w-full h-full object-contain'
+                }`}
+                autoPlay
+                playsInline
+                muted={isMuted}
+              />
 
               {/* Hidden audio element for DRM (required by rtc-drm-transform library) */}
               <audio
@@ -540,161 +567,90 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 muted={isMuted}
                 style={{ display: 'none' }}
               />
-
-              {/* Error Overlay */}
-              {(error || drmError) && (
-                <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 z-20">
-                  <div className="p-4 sm:p-6 bg-[#1e1e1e]/90 border border-[#404040] rounded-lg text-center max-w-sm mx-4 backdrop-blur-sm">
-                    <div className="inline-flex items-center justify-center w-10 sm:w-12 h-10 sm:h-12 bg-[#252525] rounded-xl mb-3 border border-[#404040]">
-                      <svg className="w-5 sm:w-6 h-5 sm:h-6 text-[#a0a0a0] animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                    </div>
-                    <h3 className="text-white font-bold text-sm sm:text-lg mb-2">{drmError ? 'DRM Error' : 'Connection Error'}</h3>
-                    <p className="text-[#d0d0d0] text-xs sm:text-sm mb-4">{drmError || error}</p>
-                    {drmError && window.self !== window.top && (
-                      <p className="text-[#a0a0a0] text-xs mb-4 font-mono bg-[#252525]/60 p-2 rounded">
-                        &lt;iframe allow="encrypted-media; autoplay" ...&gt;
-                      </p>
-                    )}
-                    <button
-                      onClick={() => { setDrmError(null); handleConnect(); }}
-                      className="px-4 py-2 bg-white text-[#141414] hover:bg-[#e5e5e5] font-semibold rounded transition-colors shadow-lg cursor-pointer min-h-[44px]"
-                    >
-                      Try Again
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Connecting Overlay */}
-              {isConnecting && (
-                <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/50 z-10 pointer-events-none">
-                  <div className="flex flex-col items-center">
-                    <div className="w-8 sm:w-10 h-8 sm:h-10 border-4 border-[#a0a0a0] border-t-transparent rounded-full animate-spin mb-2"></div>
-                    <span className="text-white font-medium text-sm sm:text-base">Connecting...</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Idle Overlay - Shown when not connected, not connecting, and no error */}
-              {!isConnected && !isConnecting && !error && !drmError && !isInterrupted && (
-                <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 pointer-events-none">
-                  <div className="flex flex-col items-center text-center p-4 sm:p-8">
-                    <div className="inline-flex items-center justify-center w-12 sm:w-16 h-12 sm:h-16 bg-[#252525] rounded-xl sm:rounded-2xl mb-3 sm:mb-4 border border-[#404040]">
-                      <svg className="w-6 sm:w-8 h-6 sm:h-8 text-[#a0a0a0]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-white font-semibold text-sm sm:text-lg mb-2">Not Connected</h3>
-                    <p className="text-[#a0a0a0] text-xs sm:text-sm max-w-xs">Click "Connect" to start viewing the stream</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Stream Interrupted Overlay */}
-              {isInterrupted && (
-                <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 z-10">
-                  <div className="flex flex-col items-center text-center p-4 sm:p-8">
-                    <div className="inline-flex items-center justify-center w-12 sm:w-16 h-12 sm:h-16 bg-[#252525] rounded-xl sm:rounded-2xl mb-3 sm:mb-4 border border-[#404040]">
-                      <svg className="w-6 sm:w-8 h-6 sm:h-8 text-[#a0a0a0]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                      </svg>
-                    </div>
-                    <h3 className="text-white font-semibold text-sm sm:text-lg mb-2">Stream Interrupted</h3>
-                    <p className="text-[#a0a0a0] text-xs sm:text-sm max-w-xs mb-3 sm:mb-4">The broadcast has been stopped or interrupted</p>
-                    <button
-                      onClick={handleConnect}
-                      className="px-4 py-2 bg-white text-[#141414] hover:bg-[#e5e5e5] font-semibold rounded transition-colors shadow-lg cursor-pointer min-h-[44px]"
-                    >
-                      Reconnect
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
 
-          {/* Controls Bar - Below the video player */}
-          <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-[#1e1e1e] rounded-lg border border-[#333333]">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              {/* Connect/Disconnect Button */}
-              {!isConnected ? (
-                <button
-                  onClick={handleConnect}
-                  disabled={isConnecting}
-                  className={`px-4 py-2.5 sm:py-3 text-[#141414] rounded-lg font-medium transition-all shadow-lg cursor-pointer min-h-[48px] ${
-                    isConnecting
-                      ? 'bg-[#404040] cursor-not-allowed opacity-75'
-                      : 'bg-white hover:bg-[#e5e5e5] hover:scale-105 active:scale-95'
-                  }`}
-                >
-                  {isConnecting ? 'Connecting...' : 'Connect'}
-                </button>
-              ) : (
-                <button
-                  onClick={() => disconnect()}
-                  className="px-4 py-2.5 sm:py-3 bg-white hover:bg-[#e5e5e5] text-[#141414] rounded-lg font-medium transition-all shadow-lg hover:scale-105 active:scale-95 cursor-pointer min-h-[48px]"
-                >
-                  Disconnect
-                </button>
-              )}
+          {/* Controls Bar - Below the video player - hidden in fullscreen mode */}
+          {!isUrlFullscreen && (
+            <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-[#1e1e1e] rounded-lg border border-[#333333]">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                {/* Connect/Disconnect Button */}
+                {!isConnected ? (
+                  <button
+                    onClick={handleConnect}
+                    disabled={isConnecting}
+                    className={`px-4 py-2.5 sm:py-3 text-[#141414] rounded-lg font-medium transition-all shadow-lg cursor-pointer min-h-[48px] ${
+                      isConnecting
+                        ? 'bg-[#404040] cursor-not-allowed opacity-75'
+                        : 'bg-white hover:bg-[#e5e5e5] hover:scale-105 active:scale-95'
+                    }`}
+                  >
+                    {isConnecting ? 'Connecting...' : 'Connect'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => disconnect()}
+                    className="px-4 py-2.5 sm:py-3 bg-white hover:bg-[#e5e5e5] text-[#141414] rounded-lg font-medium transition-all shadow-lg hover:scale-105 active:scale-95 cursor-pointer min-h-[48px]"
+                  >
+                    Disconnect
+                  </button>
+                )}
 
-              {/* Live Indicator */}
-              <div className="flex items-center gap-2 bg-[#252525] px-3 py-1.5 rounded-full border border-[#404040]">
-                <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-white/50'}`}></span>
-                <span className="text-white text-xs sm:text-sm font-medium tracking-wide">
-                  {isConnected ? 'LIVE' : 'OFFLINE'}
-                </span>
+                {/* Live Indicator */}
+                <div className="flex items-center gap-2 bg-[#252525] px-3 py-1.5 rounded-full border border-[#404040]">
+                  <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-white/50'}`}></span>
+                  <span className="text-white text-xs sm:text-sm font-medium tracking-wide">
+                    {isConnected ? 'LIVE' : 'OFFLINE'}
+                  </span>
+                </div>
               </div>
-            </div>
 
-            {/* Right side controls */}
-            <div className="flex items-center gap-2">
-              {/* Fullscreen Button */}
-              {!isEmbedMode && (
+              {/* Right side controls */}
+              <div className="flex items-center gap-2">
+                {/* Fullscreen Button */}
+                {!isEmbedMode && (
+                  <button
+                    onClick={toggleFullscreen}
+                    className="p-2.5 bg-[#252525] hover:bg-[#333333] text-white rounded-lg border border-[#404040] transition-colors cursor-pointer min-w-[48px] min-h-[48px] flex items-center justify-center"
+                    title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                    aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                  >
+                    {isFullscreen ? (
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                      </svg>
+                    )}
+                  </button>
+                )}
+
+                {/* Mute Button */}
                 <button
-                  onClick={toggleFullscreen}
+                  onClick={toggleMute}
                   className="p-2.5 bg-[#252525] hover:bg-[#333333] text-white rounded-lg border border-[#404040] transition-colors cursor-pointer min-w-[48px] min-h-[48px] flex items-center justify-center"
-                  title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-                  aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                  title={isMuted ? 'Unmute' : 'Mute'}
+                  aria-label={isMuted ? 'Unmute audio' : 'Mute audio'}
                 >
-                  {isFullscreen ? (
+                  {isMuted ? (
                     <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipRule="evenodd" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
                     </svg>
                   ) : (
                     <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                     </svg>
                   )}
                 </button>
-              )}
-
-              {/* Mute Button */}
-              <button
-                onClick={toggleMute}
-                className="p-2.5 bg-[#252525] hover:bg-[#333333] text-white rounded-lg border border-[#404040] transition-colors cursor-pointer min-w-[48px] min-h-[48px] flex items-center justify-center"
-                title={isMuted ? 'Unmute' : 'Mute'}
-                aria-label={isMuted ? 'Unmute audio' : 'Mute audio'}
-              >
-                {isMuted ? (
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" clipRule="evenodd" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                  </svg>
-                )}
-              </button>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Debug Panel - Below the video player - Hidden in production */}
-          {!isProduction && !isEmbedMode && <DebugPanel id={DEBUG_PANEL_ID} title="Player Debug Log" />}
+          {/* Debug Panel - Below the video player - Hidden in production and fullscreen mode */}
+          {!isProduction && !isEmbedMode && !isUrlFullscreen && <DebugPanel id={DEBUG_PANEL_ID} title="Player Debug Log" />}
         </div>
       )}
     </>

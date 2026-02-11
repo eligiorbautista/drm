@@ -346,8 +346,25 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
 export default function App() {
   const location = useLocation();
 
+  // Check if URL has fullscreen=true parameter (for iframe embedding)
+  const searchParams = new URLSearchParams(location.search);
+  const isFullscreenParam = searchParams.get('fullscreen') === 'true';
+
   // Check if we're on the auth/login page
   const isAuthPage = location.pathname === '/';
+
+  // Fullscreen mode bypasses auth and shows viewer directly with simplified UI
+  if (isFullscreenParam) {
+    return (
+      <AuthProvider>
+        <EncryptionProvider>
+          <div className="min-h-screen bg-black m-0 p-0">
+            <ViewerPage />
+          </div>
+        </EncryptionProvider>
+      </AuthProvider>
+    );
+  }
 
   return isAuthPage ? (
     <AuthProvider>

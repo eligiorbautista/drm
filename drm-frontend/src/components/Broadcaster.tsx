@@ -195,6 +195,24 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
+  // Auto-enter fullscreen if URL has ?fullscreen=true
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('fullscreen') === 'true') {
+      // Delay slightly to ensure DOM is fully rendered
+      const timer = setTimeout(() => {
+        if (videoContainerRef.current) {
+          videoContainerRef.current.requestFullscreen().catch(err => {
+            console.log('[Broadcaster] Auto-fullscreen blocked:', err);
+          });
+        } else {
+          console.log('[Broadcaster] Video container ref not available for auto-fullscreen');
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
   return (
     <div className="flex flex-col gap-3 sm:gap-4">
       {/* Encryption disabled warning */}
@@ -226,15 +244,6 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
             <div className="absolute top-0 left-0 right-0 z-30 p-4 bg-gradient-to-b from-black/60 to-transparent">
               <div className="flex items-center justify-between">
                 <span className="text-white font-medium">Local Preview</span>
-                <button
-                  onClick={toggleFullscreen}
-                  className="p-2 bg-[#252525] hover:bg-[#333333] text-white rounded-lg transition-colors cursor-pointer"
-                  title="Exit fullscreen"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
               </div>
             </div>
           )}
