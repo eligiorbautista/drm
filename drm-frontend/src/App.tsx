@@ -316,8 +316,6 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
       setError(null);
       const response = await apiClient.getEncryptionSetting();
       setEnabled(response.enabled);
-      // Broadcast the change to other windows
-      broadcastChannel.postMessage({ type: 'encryption-update', enabled: response.enabled });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch encryption setting');
       // Default to true (enabled) on error to preserve existing behavior
@@ -326,29 +324,6 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
       setLoading(false);
     }
   }, []);
-
-  // Create broadcast channel for cross-window synchronization
-  // @ts-ignore - BroadcastChannel is supported in modern browsers
-  const broadcastChannel = new BroadcastChannel('DRM Media Platform-encryption');
-
-  // Listen for encryption updates from other windows
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'encryption-update' && typeof event.data.enabled === 'boolean') {
-        console.log('[EncryptionProvider] Received encryption update from another window:', event.data.enabled);
-        setEnabled(event.data.enabled);
-        setLoading(false);
-        setError(null);
-      }
-    };
-
-    broadcastChannel.addEventListener('message', handleMessage);
-
-    return () => {
-      broadcastChannel.removeEventListener('message', handleMessage);
-      broadcastChannel.close();
-    };
-  }, [broadcastChannel]);
 
   useEffect(() => {
     fetchEncryptionSetting();
