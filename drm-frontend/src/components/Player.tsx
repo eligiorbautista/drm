@@ -470,9 +470,12 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
               onClick={() => {
                 if (videoRef.current) {
                   videoRef.current.muted = false;
-                  setIsMuted(false);
-                  console.log('[Player] Unmute clicked');
                 }
+                if (audioRef.current) {
+                  audioRef.current.muted = false;
+                }
+                setIsMuted(false);
+                console.log('[Player] Unmute clicked - unmuted both video and audio elements');
               }}
               className="fixed bottom-4 right-4 z-30 px-4 py-2 bg-[#252525]/80 backdrop-blur-sm text-white rounded-lg flex items-center gap-2 hover:bg-[#333333] transition-colors cursor-pointer border border-[#404040]"
             >
