@@ -192,6 +192,34 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
   }, [isConnected]);
 
+  // Extra monitoring for embed mode - ensure video stays playing
+  useEffect(() => {
+    if (!isEmbedMode || !isConnected) return;
+    
+    const video = videoRef.current;
+    if (!video) return;
+    
+    console.log('[Embed Mode] Setting up video monitoring');
+    
+    const checkVideo = setInterval(() => {
+      if (video.paused) {
+        console.log('[Embed Mode] Video paused unexpectedly, restarting...');
+        video.play().catch(e => console.warn('[Embed Mode] Play failed:', e.message));
+      }
+      if (video.srcObject) {
+        const stream = video.srcObject as MediaStream;
+        if (stream.getVideoTracks().length > 0) {
+          const track = stream.getVideoTracks()[0];
+          console.log('[Embed Mode] Video track:', track.label, 'readyState:', track.readyState);
+        }
+      } else {
+        console.log('[Embed Mode] WARNING: video has no srcObject');
+      }
+    }, 2000);
+    
+    return () => clearInterval(checkVideo);
+  }, [isConnected, isEmbedMode]);
+
   const configureDrm = async (pc: RTCPeerConnection) => {
     // Early check: verify EME is available (catches iframe permission issues)
     if (encrypted) {

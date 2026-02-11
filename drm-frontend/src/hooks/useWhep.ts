@@ -98,25 +98,41 @@ export function useWhep() {
 
       const handleStateChange = () => {
         const state = pc.connectionState;
-        console.log('WebRTC Connection State:', state);
+        console.log('[WHEP] Connection State:', state);
         logToDebug('info', `WebRTC Connection State: ${state}`);
         if (state === 'connected') {
           setIsConnected(true);
           setIsConnecting(false);
+          console.log('[WHEP] Connected - checking stream assignment');
+          
+          // Debug: check if videoElement has stream assigned
+          if (videoElement) {
+            console.log('[WHEP] Video element exists, checking srcObject:', !!videoElement.srcObject);
+            if (videoElement.srcObject) {
+              console.log('[WHEP] Stream has', (videoElement.srcObject as MediaStream).getTracks().length, 'tracks');
+            }
+          } else {
+            console.log('[WHEP] WARNING: videoElement is null');
+          }
+          
           // Ensure video is playing after connection (both DRM and non-DRM)
           if (videoElement) {
             console.log('[WHEP] Connection established, ensuring video is playing');
-            videoElement.play().catch((e) =>
-              console.warn('[WHEP] video.play() on connected rejected:', e.message)
+            videoElement.play().then(() => {
+              console.log('[WHEP] video.play() succeeded');
+            }).catch((e) =>
+              console.warn('[WHEP] video.play() rejected:', e.name, e.message)
             );
           }
           // Backup: ensure srcObject is assigned for non-DRM playback
           if (!encrypted && videoElement && streamRef.current) {
+            console.log('[WHEP] Assigning stream to videoElement for non-DRM');
             videoElement.srcObject = streamRef.current;
           }
         } else if (['failed', 'closed', 'disconnected'].includes(state)) {
           setIsConnected(false);
           setIsConnecting(false);
+          console.log('[WHEP] Connection ended:', state);
           logToDebug('error', `WebRTC connection ${state}`);
         }
       };
