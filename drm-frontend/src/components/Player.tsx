@@ -68,8 +68,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const { isConnected, isConnecting, error, connect, disconnect } = useWhep();
   
-  // Auto-unmute in embed mode for seamless playback
-  const [isMuted, setIsMuted] = useState(isEmbedMode ? false : true);
+  // Auto-unmute in embed mode for seamless playback - MUTE by default for mobile autoplay
+  const [isMuted, setIsMuted] = useState(isEmbedMode ? true : true);
   const [drmError, setDrmError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
@@ -439,25 +439,21 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     <>
       {isEmbedMode ? (
         <>
-          {/* Video element with tap-to-play functionality */}
+          {/* Video element - autoplay muted for mobile compatibility */}
           <video
             ref={videoRef}
             className="fixed inset-0 w-full h-full object-cover bg-black z-0"
             autoPlay
             playsInline
             muted={isMuted}
-            onClick={() => {
-              if (videoRef.current) {
-                if (videoRef.current.paused) {
-                  videoRef.current.play()
-                    .then(() => {
-                      console.log('[Player] Tap to play succeeded');
-                      setIsMuted(false);
-                    })
-                    .catch((e) => console.warn('[Player] Tap to play failed:', e.message));
-                }
-              }
-            }}
+          />
+          {/* Hidden audio element for DRM (required by rtc-drm-transform library) */}
+          <audio
+            ref={audioRef}
+            autoPlay
+            playsInline
+            muted={isMuted}
+            style={{ display: 'none' }}
           />
           {/* Hidden audio element for DRM (required by rtc-drm-transform library) */}
           <audio
@@ -468,31 +464,24 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             style={{ display: 'none' }}
           />
 
-          {/* Play Button Overlay - Show when connected but video might be paused */}
-          {isConnected && (
-            <div 
-              className="fixed inset-0 z-20 cursor-pointer flex items-center justify-center"
+          {/* Unmute Button - Always visible in bottom-right corner when muted */}
+          {isMuted && (
+            <button
               onClick={() => {
                 if (videoRef.current) {
-                  videoRef.current.play()
-                    .then(() => {
-                      console.log('[Player] Overlay tap play succeeded');
-                      setIsMuted(false);
-                    })
-                    .catch((e) => console.warn('[Player] Overlay play failed:', e.message));
+                  videoRef.current.muted = false;
+                  setIsMuted(false);
+                  console.log('[Player] Unmute clicked');
                 }
               }}
+              className="fixed bottom-4 right-4 z-30 px-4 py-2 bg-[#252525]/80 backdrop-blur-sm text-white rounded-lg flex items-center gap-2 hover:bg-[#333333] transition-colors cursor-pointer border border-[#404040]"
             >
-              {/* Play button that appears over the video when needed */}
-              <div className="absolute inset-0 bg-black/20 pointer-events-none"></div>
-              <div className="relative pointer-events-auto">
-                <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-2 border-white/50 hover:bg-white/30 hover:scale-110 transition-all">
-                  <svg className="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z"/>
-                  </svg>
-                </div>
-              </div>
-            </div>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+              </svg>
+              <span className="text-sm font-medium">Unmute</span>
+            </button>
           )}
 
           {/* Idle Overlay - Shown when not connected, not connecting, and no error */}
