@@ -158,15 +158,37 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   // Watch for connection state changes and ensure stream is assigned to video element
   useEffect(() => {
     if (isConnected && videoRef.current) {
-      console.log('[Player] Connected - ensuring video stream is assigned');
-      // If video element exists but has no srcObject, it might need to be re-assigned
-      if (!videoRef.current.srcObject && videoRef.current.src === '') {
-        console.log('[Player] Video has no srcObject, connection should have assigned it');
+      console.log('[Player] Connected - ensuring video is playing');
+      
+      // Check if video is already playing
+      if (videoRef.current.paused) {
+        console.log('[Player] Video is paused, attempting to play');
+        const playPromise = videoRef.current.play();
+        
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            console.log('[Player] Video play() succeeded');
+          }).catch((e) => {
+            console.warn('[Player] Video play() failed:', e.name, e.message);
+            // Try again with unmute if it's an autoplay policy issue
+            if (e.name === 'NotAllowedError') {
+              console.log('[Player] Autoplay blocked - video may require user interaction');
+              if (videoRef.current) {
+                videoRef.current.muted = false;
+                setIsMuted(false);
+                // Try play again after unmute
+                setTimeout(() => {
+                  if (videoRef.current && videoRef.current.paused) {
+                    videoRef.current.play().catch(e2 => console.warn('[Player] Second play attempt failed:', e2.message));
+                  }
+                }, 100);
+              }
+            }
+          });
+        }
+      } else {
+        console.log('[Player] Video is already playing');
       }
-      // Ensure video is playing
-      videoRef.current.play().catch((e) => {
-        console.warn('[Player] Video play failed:', e.message);
-      });
     }
   }, [isConnected]);
 

@@ -103,12 +103,16 @@ export function useWhep() {
         if (state === 'connected') {
           setIsConnected(true);
           setIsConnecting(false);
+          // Ensure video is playing after connection (both DRM and non-DRM)
+          if (videoElement) {
+            console.log('[WHEP] Connection established, ensuring video is playing');
+            videoElement.play().catch((e) =>
+              console.warn('[WHEP] video.play() on connected rejected:', e.message)
+            );
+          }
           // Backup: ensure srcObject is assigned for non-DRM playback
           if (!encrypted && videoElement && streamRef.current) {
             videoElement.srcObject = streamRef.current;
-            videoElement.play().catch((e) =>
-              console.warn('[non-DRM] video.play() on connected rejected:', e.message)
-            );
           }
         } else if (['failed', 'closed', 'disconnected'].includes(state)) {
           setIsConnected(false);
