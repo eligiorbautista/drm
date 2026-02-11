@@ -2,13 +2,36 @@ import { useState } from 'react';
 import { Player } from '../components/Player';
 import { useEncryption } from '../App';
 
-export function ViewerPage() {
+interface ViewerPageProps {
+  isEmbedMode?: boolean;
+}
+
+export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
   const { enabled: encrypted } = useEncryption();
   const streamDomain = import.meta.env.VITE_CLOUDFLARE_STREAM_DOMAIN;
   const defaultWhepPath = import.meta.env.VITE_WHEP_ENDPOINT_DEFAULT;
   const [whepEndpoint, setWhepEndpoint] = useState(streamDomain + defaultWhepPath);
   const merchant = import.meta.env.VITE_DRM_MERCHANT;
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
+
+  // Auto-set fullscreen for embed mode
+  const fullscreenParams = new URLSearchParams(window.location.search);
+  const isUrlFullscreen = fullscreenParams.get('fullscreen') === 'true';
+  const showFullscreen = isEmbedMode || isUrlFullscreen;
+
+  if (showFullscreen) {
+    return (
+      <div className="min-h-screen bg-black m-0 p-0">
+        <Player
+          endpoint={whepEndpoint}
+          merchant={merchant}
+          userId="elidev-test"
+          encrypted={encrypted}
+          isEmbedMode={true}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 sm:space-y-6 lg:space-y-8">

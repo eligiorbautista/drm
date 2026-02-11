@@ -530,17 +530,19 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
               )}
 
               {/* Video element - fills entire screen in fullscreen mode */}
-              <video
-                ref={videoRef}
-                className={`${
-                  (isUrlFullscreen || isFullscreen) 
-                    ? 'fixed inset-0 w-full h-full object-cover' 
-                    : 'w-full h-full object-contain'
-                }`}
-                autoPlay
-                playsInline
-                muted={isMuted}
-              />
+              <div className={`${
+                isUrlFullscreen || isFullscreen 
+                  ? 'h-screen w-full' 
+                  : 'aspect-video sm:aspect-video lg:aspect-video xl:aspect-[21/9] max-h-[40vh] sm:max-h-[50vh] lg:max-h-[60vh] xl:max-h-[70vh]'
+              }`}>
+                <video
+                  ref={videoRef}
+                  className="w-full h-full object-contain"
+                  autoPlay
+                  playsInline
+                  muted={isMuted}
+                />
+              </div>
 
               {/* Hidden audio element for DRM (required by rtc-drm-transform library) */}
               <audio
@@ -550,6 +552,58 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 muted={isMuted}
                 style={{ display: 'none' }}
               />
+
+              {/* Error Overlay */}
+              {(error || drmError) && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 z-20">
+                  <div className="p-4 sm:p-6 bg-[#1e1e1e]/90 border border-[#404040] rounded-lg text-center max-w-sm mx-4 backdrop-blur-sm">
+                    <div className="inline-flex items-center justify-center w-10 sm:w-12 h-10 sm:h-12 bg-[#252525] rounded-xl mb-3 border border-red-500/30">
+                      <svg className="w-5 sm:w-6 h-5 sm:h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-white font-bold text-sm sm:text-lg mb-2">{drmError ? 'DRM Error' : 'Connection Error'}</h3>
+                    <p className="text-[#d0d0d0] text-xs sm:text-sm mb-4">{drmError || error}</p>
+                    {drmError && window.self !== window.top && (
+                      <p className="text-[#a0a0a0] text-xs mb-4 font-mono bg-[#252525]/60 p-2 rounded">
+                        &lt;iframe allow="encrypted-media; autoplay" ...&gt;
+                      </p>
+                    )}
+                    <button
+                      onClick={() => { setDrmError(null); handleConnect(); }}
+                      className="px-4 py-2 bg-white text-[#141414] hover:bg-[#e5e5e5] font-semibold rounded transition-colors shadow-lg cursor-pointer min-h-[44px]"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Connecting Overlay */}
+              {isConnecting && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/50 z-10 pointer-events-none">
+                  <div className="flex flex-col items-center">
+                    <div className="w-8 sm:w-10 h-8 sm:h-10 border-4 border-[#a0a0a0] border-t-transparent rounded-full animate-spin mb-2"></div>
+                    <span className="text-white font-medium text-sm sm:text-base">Connecting...</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Idle Overlay - Shown when not connected, not connecting, and no error */}
+              {!isConnected && !isConnecting && !error && !drmError && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 pointer-events-none">
+                  <div className="flex flex-col items-center text-center p-4 sm:p-8">
+                    <div className="inline-flex items-center justify-center w-12 sm:w-16 h-12 sm:h-16 bg-[#252525] rounded-xl sm:rounded-2xl mb-3 sm:mb-4 border border-[#404040]">
+                      <svg className="w-6 sm:w-8 h-6 sm:h-8 text-[#a0a0a0]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-white font-semibold text-sm sm:text-lg mb-2">Not Connected</h3>
+                    <p className="text-[#a0a0a0] text-xs sm:text-sm max-w-xs">Click "Connect" to start viewing the stream</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

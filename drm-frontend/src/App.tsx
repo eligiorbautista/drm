@@ -349,17 +349,18 @@ export default function App() {
   // Check if URL has fullscreen=true parameter (for iframe embedding)
   const searchParams = new URLSearchParams(location.search);
   const isFullscreenParam = searchParams.get('fullscreen') === 'true';
+  const isEmbedRoute = location.pathname === '/embed';
 
   // Check if we're on the auth/login page
   const isAuthPage = location.pathname === '/';
 
-  // Fullscreen mode bypasses auth and shows viewer directly with simplified UI
-  if (isFullscreenParam) {
+  // Embed mode shows fullscreen viewer without auth, with proper overlays
+  if (isEmbedRoute || isFullscreenParam) {
     return (
       <AuthProvider>
         <EncryptionProvider>
           <div className="min-h-screen bg-black m-0 p-0">
-            <ViewerPage />
+            <ViewerPage isEmbedMode={true} />
           </div>
         </EncryptionProvider>
       </AuthProvider>
@@ -385,6 +386,14 @@ export default function App() {
                   element={
                     <ProtectedRoute requireAuth={false}>
                       <ViewerPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/embed"
+                  element={
+                    <ProtectedRoute requireAuth={false}>
+                      <ViewerPage isEmbedMode={true} />
                     </ProtectedRoute>
                   }
                 />
