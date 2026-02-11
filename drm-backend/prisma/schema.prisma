@@ -70,7 +70,7 @@ model BroadcastSession {
 model User {
   id            String   @id @default(cuid())
   email         String   @unique
-  username      String   @unique
+  name          String?
   passwordHash  String
   role          String   @default("user") // user, admin
   isActive      Boolean  @default(true)
@@ -83,7 +83,6 @@ model User {
   licenses      LicenseRequest[]
 
   @@index([email])
-  @@index([username])
   @@map("users")
 }
 

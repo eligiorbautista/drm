@@ -6,7 +6,7 @@ export function AuthPage() {
   const navigate = useNavigate();
   const { login, register, isLoading, error: authError, clearError } = useAuth();
   const [email, setEmail] = useState('');
-  const [username, setUsername] = useState('');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
@@ -27,14 +27,14 @@ export function AuthPage() {
       return;
     }
 
-    if (isRegistering && !username) {
-      setLocalError('Username is required');
+    if (isRegistering && !name) {
+      setLocalError('Name is required');
       return;
     }
 
     try {
       if (isRegistering) {
-        await register({ email, username, password });
+        await register({ email, name, password });
       } else {
         await login(email, password);
       }
@@ -78,20 +78,18 @@ export function AuthPage() {
 
           {isRegistering && (
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-[#a0a0a0] mb-2">
-                Username
+              <label htmlFor="name" className="block text-sm font-medium text-[#a0a0a0] mb-2">
+                Name
               </label>
               <input
-                id="username"
+                id="name"
                 type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="johndoe123"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="John Doe"
                 className="w-full px-4 py-3 sm:py-3.5 bg-[#1e1e1e] border border-[#404040] rounded-lg text-white placeholder-[#666666] focus:ring-2 focus:ring-white focus:border-transparent outline-none transition-all text-sm sm:text-base"
                 required
-                minLength={3}
-                maxLength={20}
-                autoComplete="username"
+                autoComplete="name"
               />
             </div>
           )}

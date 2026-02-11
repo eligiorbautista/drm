@@ -14,43 +14,43 @@ async function seedUsers() {
   const users = [
     {
       email: 'admin@sb2024.live',
-      username: 'admin',
+      name: 'admin',
       password: 'pwq123456',
       role: 'admin',
     },
     {
       email: 'user1@sb2024.live',
-      username: 'user1',
+      name: 'user1',
       password: 'pwq123456',
       role: 'user',
     },
     {
       email: 'user2@sb2024.live',
-      username: 'user2',
+      name: 'user2',
       password: 'pwq123456',
       role: 'user',
     },
     {
       email: 'user3@sb2024.live',
-      username: 'user3',
+      name: 'user3',
       password: 'pwq123456',
       role: 'user',
     },
     {
       email: 'user4@sb2024.live',
-      username: 'user4',
+      name: 'user4',
       password: 'pwq123456',
       role: 'user',
     },
     {
       email: 'user5@sb2024.live',
-      username: 'user5',
+      name: 'user5',
       password: 'pwq123456',
       role: 'user',
     },
     {
       email: 'user6@sb2024.live',
-      username: 'user6',
+      name: 'user6',
       password: 'pwq123456',
       role: 'user',
     },
@@ -72,13 +72,13 @@ async function seedUsers() {
       await prisma.user.create({
         data: {
           email: userData.email,
-          username: userData.username,
+          name: userData.name,
           passwordHash,
           role: userData.role,
         },
       });
 
-      console.log(`[INFO] Created user: ${userData.email} (username: ${userData.username})`);
+      console.log(`[INFO] Created user: ${userData.email} (name: ${userData.name})`);
     } catch (error) {
       console.error(`[ERROR] Failed to create user ${userData.email}:`, error.message);
     }

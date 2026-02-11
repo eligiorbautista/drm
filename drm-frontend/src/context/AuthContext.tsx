@@ -15,7 +15,7 @@ import api from '../lib/api';
 interface User {
   id: string;
   email: string;
-  username: string;
+  name?: string;
   role: string;
   isActive: boolean;
   createdAt: string;
@@ -33,14 +33,14 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (data: {
     email: string;
-    username: string;
+    name: string;
     password: string;
   }) => Promise<void>;
   logout: () => Promise<void>;
   refreshSession: () => Promise<void>;
   clearError: () => void;
   updateProfile: (data: {
-    username?: string;
+    name?: string;
   }) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
@@ -141,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         console.log('[Auth] Validating session against database...');
         const sessionResponse = await api.validateSession();
-        console.log('[Auth] Session valid, user:', sessionResponse.user.username);
+        console.log('[Auth] Session valid, user:', sessionResponse.user.name);
 
         // Session is valid - set user and refresh token if needed
         userRef.current = sessionResponse.user;
@@ -211,7 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log('[Auth] Calling refresh API...');
       const response = await api.refreshToken(refreshToken);
-      console.log('[Auth] Refresh response received, user:', response.user.username);
+      console.log('[Auth] Refresh response received, user:', response.user.name);
       await api.setTokens(response.token, response.refreshToken);
       userRef.current = response.user;
       setUser(response.user);
@@ -281,7 +281,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Register
   const register = useCallback(async (data: {
     email: string;
-    username: string;
+    name: string;
     password: string;
   }) => {
     setIsLoading(true);
@@ -320,7 +320,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Update profile
   const updateProfile = useCallback(async (data: {
-    username?: string;
+    name?: string;
   }) => {
     if (!user) {
       throw new Error('Not authenticated');

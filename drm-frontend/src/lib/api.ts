@@ -10,7 +10,7 @@ export interface Settings {
 export interface User {
   id: string;
   email: string;
-  username: string;
+  name?: string;
   role: string;
   isActive: boolean;
   createdAt: string;
@@ -235,7 +235,7 @@ class ApiClient {
   // ============================================================================
   async register(data: {
     email: string;
-    username: string;
+    name: string;
     password: string;
   }): Promise<{ user: User; message: string }> {
     return this.request('/api/auth/register', {
@@ -312,7 +312,7 @@ class ApiClient {
   }
 
   async updateProfile(data: {
-    username?: string;
+    name?: string;
   }): Promise<{ user: User; message: string }> {
     const token = this.getToken();
     if (!token) {

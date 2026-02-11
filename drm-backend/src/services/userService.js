@@ -57,12 +57,12 @@ function generateToken(length = 64) {
  * Create a new user
  * @param {object} data - User data
  * @param {string} data.email - User email
- * @param {string} data.username - Unique username
+ * @param {string} data.name - User name (optional)
  * @param {string} data.password - Plain text password
  * @returns {Promise<object>} Created user (without password)
  */
 async function createUser(data) {
-  const { email, username, password } = data;
+  const { email, name, password } = data;
 
   // Check if email already exists
   const existingEmail = await prisma.user.findUnique({
@@ -73,15 +73,6 @@ async function createUser(data) {
     throw new Error('User with this email already exists');
   }
 
-  // Check if username already exists
-  const existingUsername = await prisma.user.findUnique({
-    where: { username },
-  });
-
-  if (existingUsername) {
-    throw new Error('Username is already taken');
-  }
-
   // Hash password
   const passwordHash = await hashPassword(password);
 
@@ -89,13 +80,13 @@ async function createUser(data) {
   const user = await prisma.user.create({
     data: {
       email: email.toLowerCase(),
-      username,
+      name,
       passwordHash,
     },
     select: {
       id: true,
       email: true,
-      username: true,
+      name: true,
       role: true,
       isActive: true,
       createdAt: true,
@@ -103,7 +94,7 @@ async function createUser(data) {
     },
   });
 
-  logger.info('User created', { userId: user.id, email: user.email, username: user.username });
+  logger.info('User created', { userId: user.id, email: user.email, name: user.name });
 
   return user;
 }
@@ -162,7 +153,7 @@ async function authenticateUser(email, password, ipAddress, userAgent) {
     user: {
       id: user.id,
       email: user.email,
-      username: user.username,
+      name: user.name,
       role: user.role,
     },
     token,
@@ -182,7 +173,7 @@ async function findUserById(userId) {
     select: {
       id: true,
       email: true,
-      username: true,
+      name: true,
       role: true,
       isActive: true,
       createdAt: true,
@@ -215,7 +206,7 @@ async function getSessionByToken(token) {
         select: {
           id: true,
           email: true,
-          username: true,
+          name: true,
           role: true,
           isActive: true,
         },
@@ -279,7 +270,7 @@ async function refreshSession(refreshToken, ipAddress, userAgent) {
     user: {
       id: session.user.id,
       email: session.user.email,
-      username: session.user.username,
+      name: session.user.name,
       role: session.user.role,
     },
     token: newToken,
@@ -355,18 +346,18 @@ async function getUserSessions(userId) {
  * @returns {Promise<object>} Updated user
  */
 async function updateUser(userId, data) {
-  const { username, ...rest } = data;
+  const { name, ...rest } = data;
 
   return prisma.user.update({
     where: { id: userId },
     data: {
-      username,
+      name,
       ...rest,
     },
     select: {
       id: true,
       email: true,
-      username: true,
+      name: true,
       role: true,
       isActive: true,
       createdAt: true,

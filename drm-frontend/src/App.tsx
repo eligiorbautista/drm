@@ -56,7 +56,7 @@ function UserMenu({
         <div className="w-8 h-8 bg-[#252525] rounded-full flex items-center justify-center border border-[#404040]">
           {user ? (
             <span className="text-sm font-medium text-white">
-              {user.username?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
+              {user.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
             </span>
           ) : (
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -65,7 +65,7 @@ function UserMenu({
           )}
         </div>
         <span className="hidden lg:block text-sm">
-          {user?.username || 'User'}
+          {user?.name || 'User'}
         </span>
         <svg className={`hidden lg:block w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -78,7 +78,7 @@ function UserMenu({
           {user && (
             <div className="px-4 py-3 border-b border-[#333333]">
               <p className="text-sm font-medium text-white truncate">
-                @{user.username}
+                {user.name || 'User'}
               </p>
               <p className="text-xs text-[#666666] truncate">
                 {user.email}
