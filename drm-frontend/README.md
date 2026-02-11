@@ -71,18 +71,20 @@ You can embed the player into any website using an `<iframe>`. The player is con
 
 | Parameter   | Type     | Required | Description |
 | ----------- | -------- | -------- | ----------- |
-| `endpoint`  | String   | **Yes**  | The WHEP playback URL (e.g., `https://your-stream.com/whep`). |
-| `merchant`  | String   | **Yes**  | Your CastLabs Merchant ID (default: `sb_live`). |
-| `encrypted` | Boolean  | No       | Set to `true` if the stream is DRM-protected. Default: `false`. |
-| `token`     | String   | No       | The DRM authentication token (JWT). Required if `encrypted=true`. |
+| `encrypted` | Boolean  | No       | Controls DRM decryption: `true` = decrypt DRM-protected stream, `false` = show stream unencrypted. Default: Read from viewer button (database setting). |
 
-**Example:**
+> [NOTE] **DRM Encryption:** The easiest way to open the embed player with the correct encryption setting is to use the "Embed" button on the Viewer page. This automatically sets the correct `encrypted` parameter. Endpoint and merchant configuration come from your environment variables.
 
-> [WARNING] **CRITICAL:** The `allow="encrypted-media; autoplay"` attribute is **required** on the `<iframe>` element for DRM to work. Without it, browsers block the Encrypted Media Extensions API in cross-origin iframes, causing an "output-protection" error.
+**Recommended: Use the "Embed" button**
 
+The Viewer page includes an "Embed" button that automatically sets the correct `encrypted` parameter based on your database settings.
+
+**Manual iframe examples:**
+
+**With DRM Decryption (encrypted=true):**
 ```html
 <iframe
-  src="https://your-player-domain.com/embed?endpoint=https://stream.com/whep&merchant=sb_live&encrypted=true"
+  src="https://your-player-domain.com/embed?encrypted=true"
   width="100%"
   height="500px"
   frameborder="0"
@@ -91,14 +93,30 @@ You can embed the player into any website using an `<iframe>`. The player is con
 ></iframe>
 ```
 
+**Without DRM Decryption (encrypted=false):**
+```html
+<iframe
+  src="https://your-player-domain.com/embed?encrypted=false"
+  width="100%"
+  height="500px"
+  frameborder="0"
+  allow="autoplay; fullscreen"
+  allowfullscreen
+></iframe>
+```
+
+> [NOTE] **Configuration:** Endpoint and merchant configuration are loaded from environment variables (`VITE_CLOUDFLARE_STREAM_DOMAIN`, `VITE_WHEP_ENDPOINT_DEFAULT`, `VITE_DRM_MERCHANT`). Only the `encrypted` parameter needs to be set in the URL.
+
+> [NOTE] **DRM Control:** To enable/disable DRM decryption, use the Settings page in the application to toggle the `drm.encryption.enabled` setting. This applies to the embed player automatically.
+
 **Troubleshooting: "output-protection" error in iframes**
 
 If you see an `output-protection` or DRM error when embedding the player:
 
-1. **Verify the `allow` attribute** — The `<iframe>` MUST include `allow="encrypted-media; autoplay"`. This is a browser security requirement for cross-origin DRM playback.
-2. **Use HTTPS** — Both the parent page and the embedded player must be served over HTTPS.
-3. **Check browser support** — Ensure the browser supports EME (Chrome, Edge, Safari, Firefox).
-4. **Test directly first** — Open the embed URL directly in a browser tab to confirm DRM works outside the iframe.
+1. **Verify the `allow` attribute** — The `<iframe>` MUST include `allow="encrypted-media; autoplay"` when `encrypted=true`. This is a browser security requirement for cross-origin DRM playback.
+2. **Check the encryption setting** — DRM encryption is controlled by the `encrypted` URL parameter (`true` or `false`). This is set automatically by the "Embed" button based on your database `drm.encryption.enabled` setting.
+3. **Use HTTPS** — Both the parent page and the embedded player must be served over HTTPS.
+4. **Check browser support** — Ensure the browser supports EME (Chrome, Edge, Safari, Firefox).
 
 ### Option 2: React Component
 

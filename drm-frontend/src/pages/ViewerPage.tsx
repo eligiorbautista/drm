@@ -7,24 +7,59 @@ interface ViewerPageProps {
 }
 
 export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
-  const { enabled: encrypted } = useEncryption();
+  const { enabled: encryptedFromSettings, loading: encryptionLoading, error: encryptionError } = useEncryption();
+  
+  // Check URL query parameters for encryption override
+  // In embed mode, read the URL parameter to control DRM decryption
+  // Usage: /embed?encrypted=true for DRM decryption, /embed?encrypted=false for unencrypted
+  const queryParams = isEmbedMode ? new URLSearchParams(window.location.search) : null;
+  const encryptedParam = queryParams?.get('encrypted');
+  
+  // Use URL parameter in embed mode, otherwise use database setting
+  const shouldUseEncryption = isEmbedMode 
+    ? (encryptedParam === 'true') 
+    : encryptedFromSettings;
+
+  // State for WHEP endpoint (used in settings panel and embed URL generation)
   const streamDomain = import.meta.env.VITE_CLOUDFLARE_STREAM_DOMAIN;
   const defaultWhepPath = import.meta.env.VITE_WHEP_ENDPOINT_DEFAULT;
   const [whepEndpoint, setWhepEndpoint] = useState(streamDomain + defaultWhepPath);
   const merchant = import.meta.env.VITE_DRM_MERCHANT;
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
+  
+  // Get current endpoint from state (either initial or user-modified)
+  const getEmbedUrl = () => {
+    return `${window.location.origin}/embed?encrypted=${encryptedFromSettings}`;
+  };
+
+  const openEmbedPlayer = () => {
+    const embedUrl = getEmbedUrl();
+    window.open(embedUrl, 'EmbedPlayer', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes');
+  };
+
+  console.log('[ViewerPage] Encryption config:', {
+    isEmbedMode,
+    encryptedParam,
+    baseSetting: encryptedFromSettings,
+    encryptionLoading,
+    encryptionError,
+    shouldUseEncryption,
+    embedUrl: getEmbedUrl()
+  });
 
   // Auto-set fullscreen for embed mode
   const showFullscreen = isEmbedMode;
 
   if (showFullscreen) {
+    // In embed mode, get encryption from URL param, but use defaults for endpoint/merchant
+    console.log('[ViewerPage] Embed mode - shouldUseEncryption:', shouldUseEncryption, 'from URL param');
     return (
       <div className="min-h-screen bg-black m-0 p-0">
         <Player
           endpoint={whepEndpoint}
           merchant={merchant}
           userId="elidev-test"
-          encrypted={encrypted}
+          encrypted={shouldUseEncryption}
           isEmbedMode={true}
         />
       </div>
@@ -37,7 +72,8 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
         endpoint={whepEndpoint}
         merchant={merchant}
         userId="elidev-test"
-        encrypted={encrypted}
+        encrypted={shouldUseEncryption}
+        onOpenEmbed={openEmbedPlayer}
       />
 
       {/* Settings Panel - Hidden in production */}
@@ -68,7 +104,7 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
                 <input
                   type="checkbox"
                   id="drm-toggle"
-                  checked={encrypted}
+                  checked={shouldUseEncryption}
                   disabled
                   className="w-5 h-5 text-white rounded focus:ring-white bg-[#252525] border-[#404040] cursor-not-allowed opacity-60"
                 />
@@ -77,7 +113,7 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
                 </label>
               </div>
 
-              {encrypted && (
+              {shouldUseEncryption && (
                 <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300 border-t border-[#333333] pt-4">
                   <div className="text-xs sm:text-sm text-[#a0a0a0]">
                     <p className="mb-1 flex items-center gap-1">
@@ -117,10 +153,10 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
                 mode: 'viewer',
                 endpoint: whepEndpoint,
                 merchant,
-                encrypted,
-                encryptionMode: encrypted ? 'cbcs' : undefined,
-                keys: encrypted ? 'From .env' : undefined,
-                token: encrypted ? 'Auto-generated' : undefined
+                encrypted: shouldUseEncryption,
+                encryptionMode: shouldUseEncryption ? 'cbcs' : undefined,
+                keys: shouldUseEncryption ? 'From .env' : undefined,
+                token: shouldUseEncryption ? 'Auto-generated' : undefined
               }, null, 2)}
             </pre>
           </div>

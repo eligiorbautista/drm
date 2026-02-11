@@ -314,18 +314,24 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
     try {
       setLoading(true);
       setError(null);
+      console.log('[EncryptionProvider] Fetching encryption setting from API...');
       const response = await apiClient.getEncryptionSetting();
+      console.log('[EncryptionProvider] API response:', response);
       setEnabled(response.enabled);
+      console.log('[EncryptionProvider] Encryption enabled set to:', response.enabled);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch encryption setting');
-      // Default to true (enabled) on error to preserve existing behavior
-      setEnabled(true);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch encryption setting';
+      setError(errorMessage);
+      console.error('[EncryptionProvider] Error fetching encryption setting:', errorMessage);
+      // Default to false (disabled) on error to prevent unwanted DRM attempts
+      setEnabled(false);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    console.log('[EncryptionProvider] Component mounted, fetching initial setting...');
     fetchEncryptionSetting();
   }, [fetchEncryptionSetting]);
 
