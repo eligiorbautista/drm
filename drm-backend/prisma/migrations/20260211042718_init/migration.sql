@@ -38,14 +38,10 @@ CREATE TABLE "broadcast_sessions" (
 CREATE TABLE "users" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
+    "name" TEXT,
     "passwordHash" TEXT NOT NULL,
-    "firstName" TEXT,
-    "lastName" TEXT,
     "role" TEXT NOT NULL DEFAULT 'user',
     "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "emailVerified" BOOLEAN NOT NULL DEFAULT false,
-    "subscriptionTier" TEXT DEFAULT 'free',
-    "subscriptionExpiresAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -61,6 +57,7 @@ CREATE TABLE "user_sessions" (
     "ipAddress" TEXT,
     "userAgent" TEXT,
     "expiresAt" TIMESTAMP(3) NOT NULL,
+    "refreshExpiresAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "lastActiveAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
