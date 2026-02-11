@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useWhep } from '../hooks/useWhep';
 import { rtcDrmConfigure, rtcDrmOnTrack, rtcDrmEnvironments } from '../lib/rtc-drm-transform.min.js';
 import { hexToUint8Array } from '../lib/drmUtils';
+import { openEmbedPlayer } from '../lib/embedPlayer';
 import { DebugPanel } from './DebugPanel';
 
 export interface PlayerProps {
@@ -361,10 +362,16 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   };
 
   const openEmbedPage = () => {
-    // Embed page now uses environment defaults for merchant and encrypted=true
-    // No URL parameters needed
-    const embedUrl = `${window.location.origin}/embed.html`;
-    window.open(embedUrl, '_blank');
+    // Use the new embed player utility with current player configuration
+    openEmbedPlayer({
+      endpoint,
+      merchant,
+      userId,
+      encrypted,
+      width: 1280,
+      height: 720,
+      title: 'DRM Stream Player',
+    });
   };
 
   const toggleMute = () => {

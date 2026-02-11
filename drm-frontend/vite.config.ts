@@ -27,7 +27,6 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'index.html'),
-          embed: resolve(__dirname, 'embed.html'),
         },
       },
     },

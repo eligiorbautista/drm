@@ -4,6 +4,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { ViewerPage } from './pages/ViewerPage'
 import { BroadcasterPage } from './pages/BroadcasterPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { EmbedPlayerPage } from './pages/EmbedPlayerPage'
 import { AuthProvider } from './context/AuthContext'
 import { useAuth } from './context/AuthContext'
 import './App.css'
@@ -349,10 +350,12 @@ export default function App() {
   // Check if we're on the auth/login page
   const isAuthPage = location.pathname === '/';
 
-  return isAuthPage ? (
+  return isAuthPage && !location.pathname.startsWith('/embed') ? (
     <AuthProvider>
       <AuthPage />
     </AuthProvider>
+  ) : location.pathname.startsWith('/embed') ? (
+    <EmbedPlayerPage />
   ) : (
     <AuthProvider>
       <EncryptionProvider>
