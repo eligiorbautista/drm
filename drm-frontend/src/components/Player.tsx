@@ -75,7 +75,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   // Auto-unmute in fullscreen/embed mode for seamless playback
   const [isMuted, setIsMuted] = useState(isEmbedMode || isUrlFullscreen ? false : true);
   const [drmError, setDrmError] = useState<string | null>(null);
-  const [wasConnected, setWasConnected] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
 
@@ -158,13 +157,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       return () => clearTimeout(timer);
     }
   }, []);
-
-  // Track if we were previously connected to detect interruptions
-  useEffect(() => {
-    if (isConnected) {
-      setWasConnected(true);
-    }
-  }, [isConnected]);
 
   // Auto-connect on mount when in embed mode
   useEffect(() => {
@@ -418,12 +410,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       audioRef.current.muted = !isMuted;
     }
   };
-
-  useEffect(() => {
-    if (isConnected) {
-      setWasConnected(true);
-    }
-  }, [isConnected]);
 
   return (
     <>
