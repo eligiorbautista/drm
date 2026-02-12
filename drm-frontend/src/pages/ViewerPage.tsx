@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Player } from '../components/Player';
-import { EmbedPlayer } from '../components/EmbedPlayer';
+import { EmbedPlayerWithDrm } from '../components/EmbedPlayerWithDrm';
 import { useEncryption } from '../App';
 
 interface ViewerPageProps {
@@ -29,14 +29,21 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
   
   // Get current endpoint from state (either initial or user-modified)
-  const getWatchUrl = () => {
+  const getEmbedUrl = () => {
     const endpointParam = encodeURIComponent(whepEndpoint);
-    return `${window.location.origin}/watch?endpoint=${endpointParam}`;
+    const encryptedParam = shouldUseEncryption ? `&encrypted=true` : '';
+    return `${window.location.origin}/embed?endpoint=${endpointParam}${encryptedParam}`;
   };
 
-  const openWatchPlayer = () => {
-    const watchUrl = getWatchUrl();
-    window.open(watchUrl, '_blank', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes');
+  // Build embed URL - endpoint is loaded from env file, only encryption flag is passed
+  const getEmbedUrl = () => {
+    const encryptedParam = shouldUseEncryption ? `?encrypted=true` : '';
+    return `${window.location.origin}/embed${encryptedParam}`;
+  };
+
+  const openEmbedPlayer = () => {
+    const embedUrl = getEmbedUrl();
+    window.open(embedUrl, '_blank', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes');
   };
 
   console.log('[ViewerPage] Config:', {
@@ -46,20 +53,22 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
     encryptionLoading,
     encryptionError,
     shouldUseEncryption,
-    watchUrl: getWatchUrl()
+    embedUrl: getEmbedUrl()
   });
 
   // Auto-set fullscreen for embed mode
   const showFullscreen = isEmbedMode;
 
   if (showFullscreen) {
-    // In embed mode, use the simplified EmbedPlayer without DRM
-    // The embed player is designed for clean iframe embedding
-    console.log('[ViewerPage] Embed mode - using EmbedPlayer (no DRM)');
+    // In embed mode, use the EmbedPlayerWithDrm for clean iframe embedding with DRM support
+    console.log('[ViewerPage] Embed mode - using EmbedPlayerWithDrm');
     return (
       <div className="min-h-screen bg-black m-0 p-0">
-        <EmbedPlayer
+        <EmbedPlayerWithDrm
           endpoint={whepEndpoint}
+          encrypted={shouldUseEncryption}
+          merchant={merchant}
+          userId="elidev-test"
         />
       </div>
     );
@@ -72,7 +81,7 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
         merchant={merchant}
         userId="elidev-test"
         encrypted={shouldUseEncryption}
-        onOpenEmbed={openWatchPlayer}
+        onOpenEmbed={openEmbedPlayer}
       />
 
       {/* Settings Panel - Hidden in production */}

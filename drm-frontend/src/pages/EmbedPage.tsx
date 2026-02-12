@@ -1,20 +1,19 @@
 import { useSearchParams } from 'react-router-dom';
-import { Player } from '../components/Player';
+import { EmbedPlayerWithDrm } from '../components/EmbedPlayerWithDrm';
 
 /**
- * Standalone embed player page with DRM support
- * This page is designed for iframe access with DRM decryption
- * Usage: /embed?endpoint=<whep-endpoint>&encrypted=true
+ * Standalone embed player page with optional DRM support
+ * This is a clean video-only player for iframe embedding
+ * Endpoint is always loaded from environment variables (VITE_CLOUDFLARE_STREAM_DOMAIN + VITE_WHEP_ENDPOINT_DEFAULT)
+ * Usage: /embed?encrypted=true
  */
 export function EmbedPage() {
   const [searchParams] = useSearchParams();
   
-  // Get endpoint from URL query parameter
-  // If not provided, use the default from environment variables
-  const endpointParam = searchParams.get('endpoint');
+  // Endpoint from environment variables (no URL override)
   const streamDomain = import.meta.env.VITE_CLOUDFLARE_STREAM_DOMAIN;
   const defaultWhepPath = import.meta.env.VITE_WHEP_ENDPOINT_DEFAULT;
-  const endpoint = endpointParam || (streamDomain + defaultWhepPath);
+  const endpoint = streamDomain + defaultWhepPath;
   
   // Get encryption setting from URL parameter
   // ?encrypted=true enables DRM decryption
@@ -29,7 +28,7 @@ export function EmbedPage() {
   const userId = userIdParam || 'elidev-test';
   
   console.log('[EmbedPage] Config:', {
-    endpoint: endpointParam ? '(from URL)' : '(default)',
+    endpoint: '(from env)',
     encrypted,
     merchant,
     userId
@@ -37,12 +36,11 @@ export function EmbedPage() {
   
   return (
     <div className="min-h-screen bg-black m-0 p-0">
-      <Player 
+      <EmbedPlayerWithDrm 
         endpoint={endpoint}
+        encrypted={encrypted}
         merchant={merchant}
         userId={userId}
-        encrypted={encrypted}
-        isEmbedMode={true}
       />
     </div>
   );
