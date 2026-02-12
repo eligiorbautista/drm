@@ -30,11 +30,12 @@ function checkEmeAvailability(logDebug: (msg: string) => void): Promise<{ availa
   // Probe EME with a minimal config to verify the permission is delegated
   // Support both Widevine and FairPlay (Safari) key systems
   const uaHasIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent) || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
-  const uaHasSafari = /Safari/i.test(navigator.userAgent) && !/Chrome|CriOS|FxiOS/i.test(navigator.userAgent);
+  // IMPORTANT: Chrome on iOS (CriOS) uses Safari's WebKit engine and only supports FairPlay, NOT Widevine
+  // So we treat ALL iOS browsers as FairPlay users
   
-  const probeConfigs: MediaKeySystemConfiguration[] = uaHasIOS || uaHasSafari ? [{
-    // FairPlay config for Safari/iOS
-    initDataTypes: ['sinf', 'webm'],
+  const probeConfigs: MediaKeySystemConfiguration[] = uaHasIOS ? [{
+    // FairPlay config for ALL iOS browsers (Safari, Chrome, Firefox on iOS)
+    initDataTypes: ['cenc', 'cbcs', 'sinf', 'webm'],
     videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }],
     audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }]
   }] : [{
@@ -356,16 +357,17 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     const uaHasFirefox = /Firefox/i.test(navigator.userAgent);
     const uaHasMobile = /Mobile|Tablet/i.test(navigator.userAgent);
     const uaHasIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent) || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
-    const uaHasSafari = /Safari/i.test(navigator.userAgent) && !/Chrome|CriOS|FxiOS/i.test(navigator.userAgent);
+    // NOTE: Chrome on iOS (CriOS) uses Safari's WebKit engine and only supports FairPlay
+    const uaHasSafari = /Safari/i.test(navigator.userAgent);
     
     // Android detection: prioritize userAgent over platform (Firefox/Chrome on Android)
     const isAndroid = uaHasAndroid || 
                       platform.toLowerCase() === 'android' ||
                       (isMobile && /linux/i.test(platform));
     
-    // iOS/Safari detection
+    // iOS detection - ALL iOS browsers (including Chrome/CriOS) use FairPlay only
     const isIOS = uaHasIOS;
-    const isSafari = uaHasSafari;
+    const isSafari = uaHasSafari; // Only used for desktop Safari on macOS
     
     // Firefox detection: check userAgent (works cross-platform)
     const isFirefox = uaHasFirefox;
@@ -447,9 +449,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       logDebug(`Set mediaBufferMs=100 (default per documentation)`);
     }
 
-    // iOS/Safari uses FairPlay which requires robustness setting
-    // Safari FairPlay typically doesn't support 'robustness' property like Widevine
-    const robustness = isIOS || isSafari ? undefined : (isAndroid ? androidRobustness : 'SW' as 'HW' | 'SW');
+    // FairPlay on iOS doesn't support 'robustness' property like Widevine
+    // Desktop Safari on macOS may support Widevine as well
+    const robustness = isIOS ? undefined : (isAndroid ? androidRobustness : 'SW' as 'HW' | 'SW');
 
     const video = {
       codec: 'H264' as const,
@@ -475,11 +477,11 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       videoElement,
       audioElement,
       video,
-      // iOS/Safari FairPlay requires AAC audio codec (mp4a.40.2), while other platforms use opus
-      // Note: Using type assertion because SDK TypeScript definitions don't include 'mp4a.40.2'
-      // but the runtime SDK supports it for FairPlay
-      audio: isIOS || isSafari 
-        ? { codec: 'mp4a.40.2' as any, encryption: 'clear' as const }
+      // iOS devices (including Safari, Chrome, Firefox on iOS) use FairPlay with AAC audio
+      // FairPlay requires 'clear' audio encryption, not opus
+      // Android/Windows/Linux use opus codec
+      audio: isIOS 
+        ? { codec: 'mp4a.40.2' as any, encryption: 'clear' as const } 
         : { codec: 'opus' as const, encryption: 'clear' as const },
       logLevel: 3,
       mediaBufferMs  // Ultra-low latency buffer for smooth streaming
