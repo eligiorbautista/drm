@@ -2,7 +2,6 @@ import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
 import { AuthPage } from './components/Auth'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { ViewerPage } from './pages/ViewerPage'
-import { EmbedPage } from './pages/EmbedPage'
 import { BroadcasterPage } from './pages/BroadcasterPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { AuthProvider } from './context/AuthContext'
@@ -353,16 +352,15 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
 export default function App() {
   const location = useLocation();
 
-  // Check if URL has fullscreen=true parameter (for iframe embedding)
-  const searchParams = new URLSearchParams(location.search);
-  const isFullscreenParam = searchParams.get('fullscreen') === 'true';
-  const isEmbedRoute = location.pathname === '/embed';
-
   // Check if we're on the auth/login page
   const isAuthPage = location.pathname === '/';
 
-  // Embed mode shows fullscreen viewer without auth, with proper overlays
-  if (isEmbedRoute || isFullscreenParam) {
+  // Handle fullscreen mode for external links
+  const searchParams = new URLSearchParams(location.search);
+  const isFullscreenParam = searchParams.get('fullscreen') === 'true';
+
+  // Fullscreen mode shows viewer without navigation
+  if (isFullscreenParam) {
     return (
       <AuthProvider>
         <EncryptionProvider>
@@ -393,22 +391,6 @@ export default function App() {
                   element={
                     <ProtectedRoute requireAuth={false}>
                       <ViewerPage />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/embed"
-                  element={
-                    <ProtectedRoute requireAuth={false} allowRedirect={false}>
-                      <ViewerPage isEmbedMode={true} />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/watch"
-                  element={
-                    <ProtectedRoute requireAuth={false}>
-                      <EmbedPage />
                     </ProtectedRoute>
                   }
                 />

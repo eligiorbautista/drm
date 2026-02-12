@@ -1,14 +1,13 @@
 # DRM Media Platform
 
-A React-based embeddable player component for secure live streaming with DRM protection via WebRTC (WHEP/WHIP).
+A React-based player for secure live streaming with DRM protection via WebRTC (WHEP/WHIP).
 
 ## Features
 
 - **WHEP Playback:** Low-latency streaming via WebRTC viewer.
 - **WHIP Broadcasting:** WebRTC-based live broadcasting with camera/microphone support.
 - **DRM Integration:** Built-in support for CastLabs DRM encryption (WHIP) and decryption (WHEP) using `rtc-drm-transform`.
-- **Embeddable:** Available as a standalone Iframe page or a React component.
-- **Customizable:** Configurable via URL parameters or Props.
+- **Customizable:** Configurable via Props or environment variables.
 - **Dual Mode:** Toggle between viewer and broadcaster modes in the same app.
 - **Secure Auth:** Cookie-based authentication with HttpOnly cookies for enhanced security.
 
@@ -26,7 +25,6 @@ A React-based embeddable player component for secure live streaming with DRM pro
 
 3. Access the demo:
    - **Main App:** `http://localhost:5173/`
-   - **Embed Page:** `http://localhost:5173/embed.html`
 
 ## Authentication
 
@@ -57,68 +55,10 @@ Ensure the backend is configured with CORS credentials enabled and the `COOKIE_S
 
 3.  Access the demo:
     -   **Main App:** `http://localhost:5173/`
-    -   **Embed Page:** `http://localhost:5173/embed.html`
 
 ## Integration Guide
 
-### Option 1: Iframe Embedding (Recommended for non-React apps)
-
-You can embed the player into any website using an `<iframe>`. The player is configured via URL query parameters.
-
-**Base URL:** `/embed.html`
-
-**Query Parameters:**
-
-| Parameter   | Type     | Required | Description |
-| ----------- | -------- | -------- | ----------- |
-| `encrypted` | Boolean  | No       | Controls DRM decryption: `true` = decrypt DRM-protected stream, `false` = show stream unencrypted. Default: Read from viewer button (database setting). |
-
-> [NOTE] **DRM Encryption:** The easiest way to open the embed player with the correct encryption setting is to use the "Embed" button on the Viewer page. This automatically sets the correct `encrypted` parameter. Endpoint and merchant configuration come from your environment variables.
-
-**Recommended: Use the "Embed" button**
-
-The Viewer page includes an "Embed" button that automatically sets the correct `encrypted` parameter based on your database settings.
-
-**Manual iframe examples:**
-
-**With DRM Decryption (encrypted=true):**
-```html
-<iframe
-  src="https://your-player-domain.com/embed?encrypted=true"
-  width="100%"
-  height="500px"
-  frameborder="0"
-  allow="autoplay; encrypted-media; fullscreen"
-  allowfullscreen
-></iframe>
-```
-
-**Without DRM Decryption (encrypted=false):**
-```html
-<iframe
-  src="https://your-player-domain.com/embed?encrypted=false"
-  width="100%"
-  height="500px"
-  frameborder="0"
-  allow="autoplay; fullscreen"
-  allowfullscreen
-></iframe>
-```
-
-> [NOTE] **Configuration:** Endpoint and merchant configuration are loaded from environment variables (`VITE_CLOUDFLARE_STREAM_DOMAIN`, `VITE_WHEP_ENDPOINT_DEFAULT`, `VITE_DRM_MERCHANT`). Only the `encrypted` parameter needs to be set in the URL.
-
-> [NOTE] **DRM Control:** To enable/disable DRM decryption, use the Settings page in the application to toggle the `drm.encryption.enabled` setting. This applies to the embed player automatically.
-
-**Troubleshooting: "output-protection" error in iframes**
-
-If you see an `output-protection` or DRM error when embedding the player:
-
-1. **Verify the `allow` attribute** — The `<iframe>` MUST include `allow="encrypted-media; autoplay"` when `encrypted=true`. This is a browser security requirement for cross-origin DRM playback.
-2. **Check the encryption setting** — DRM encryption is controlled by the `encrypted` URL parameter (`true` or `false`). This is set automatically by the "Embed" button based on your database `drm.encryption.enabled` setting.
-3. **Use HTTPS** — Both the parent page and the embedded player must be served over HTTPS.
-4. **Check browser support** — Ensure the browser supports EME (Chrome, Edge, Safari, Firefox).
-
-### Option 2: React Component
+### React Component
 
 If you are building a React application, you can import the `Player` component directly.
 
@@ -149,9 +89,9 @@ function App() {
 | Prop        | Type     | Required | Description |
 | ----------- | -------- | -------- | ----------- |
 | `endpoint`  | string   | **Yes**  | The WHEP playback URL. |
-| `merchant`  | string   | **Yes**  | Your CastLabs Merchant ID. |
+| `merchant`  | string   | No       | Your CastLabs Merchant ID. |
+| `userId`    | string   | No       | User ID for callback authorization. |
 | `encrypted` | boolean  | No       | Enable DRM decryption. |
-| `token`     | string   | No       | DRM token. |
 
 ## Building for Production
 
@@ -163,7 +103,6 @@ npm run build
 
 The `dist/` folder will contain:
 - `index.html` (Main App with Viewer and Broadcaster modes)
-- `embed.html` (Standalone Embed Page)
 - Assets (JS/CSS)
 
 ## Broadcaster Mode

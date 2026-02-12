@@ -1,78 +1,22 @@
 import { useState } from 'react';
 import { Player } from '../components/Player';
-import { EmbedPlayerWithDrm } from '../components/EmbedPlayerWithDrm';
 import { useEncryption } from '../App';
 
-interface ViewerPageProps {
-  isEmbedMode?: boolean;
-}
-
-export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
+export function ViewerPage({ isEmbedMode }: { isEmbedMode?: boolean } = {}) {
   const { enabled: encryptedFromSettings, loading: encryptionLoading, error: encryptionError } = useEncryption();
-  
-  // Check URL query parameters for encryption override
-  // In embed mode, read the URL parameter to control DRM decryption
-  // Usage: /embed?encrypted=true for DRM decryption, /embed?encrypted=false for unencrypted
-  const queryParams = isEmbedMode ? new URLSearchParams(window.location.search) : null;
-  const encryptedParam = queryParams?.get('encrypted');
-  
-  // Use URL parameter in embed mode, otherwise use database setting
-  const shouldUseEncryption = isEmbedMode 
-    ? (encryptedParam === 'true') 
-    : encryptedFromSettings;
 
-  // State for WHEP endpoint (used in settings panel and embed URL generation)
+  // State for WHEP endpoint
   const streamDomain = import.meta.env.VITE_CLOUDFLARE_STREAM_DOMAIN;
   const defaultWhepPath = import.meta.env.VITE_WHEP_ENDPOINT_DEFAULT;
   const [whepEndpoint, setWhepEndpoint] = useState(streamDomain + defaultWhepPath);
   const merchant = import.meta.env.VITE_DRM_MERCHANT;
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
-  
-  // Get current endpoint from state (either initial or user-modified)
-  const getEmbedUrl = () => {
-    const endpointParam = encodeURIComponent(whepEndpoint);
-    const encryptedParam = shouldUseEncryption ? `&encrypted=true` : '';
-    return `${window.location.origin}/embed?endpoint=${endpointParam}${encryptedParam}`;
-  };
-
-  // Build embed URL - endpoint is loaded from env file, only encryption flag is passed
-  const getEmbedUrl = () => {
-    const encryptedParam = shouldUseEncryption ? `?encrypted=true` : '';
-    return `${window.location.origin}/embed${encryptedParam}`;
-  };
-
-  const openEmbedPlayer = () => {
-    const embedUrl = getEmbedUrl();
-    window.open(embedUrl, '_blank', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes');
-  };
 
   console.log('[ViewerPage] Config:', {
-    isEmbedMode,
-    encryptedParam,
     baseSetting: encryptedFromSettings,
     encryptionLoading,
-    encryptionError,
-    shouldUseEncryption,
-    embedUrl: getEmbedUrl()
+    encryptionError
   });
-
-  // Auto-set fullscreen for embed mode
-  const showFullscreen = isEmbedMode;
-
-  if (showFullscreen) {
-    // In embed mode, use the EmbedPlayerWithDrm for clean iframe embedding with DRM support
-    console.log('[ViewerPage] Embed mode - using EmbedPlayerWithDrm');
-    return (
-      <div className="min-h-screen bg-black m-0 p-0">
-        <EmbedPlayerWithDrm
-          endpoint={whepEndpoint}
-          encrypted={shouldUseEncryption}
-          merchant={merchant}
-          userId="elidev-test"
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-4 sm:space-y-6 lg:space-y-8">
@@ -80,12 +24,12 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
         endpoint={whepEndpoint}
         merchant={merchant}
         userId="elidev-test"
-        encrypted={shouldUseEncryption}
-        onOpenEmbed={openEmbedPlayer}
+        encrypted={encryptedFromSettings}
+        isEmbedMode={isEmbedMode}
       />
 
       {/* Settings Panel - Hidden in production */}
-      {!isProduction && (
+      {!isProduction && !isEmbedMode && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           {/* Controls Panel */}
           <div className="p-4 sm:p-6 bg-[#1e1e1e] rounded-lg border border-[#333333]">
@@ -112,7 +56,7 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
                 <input
                   type="checkbox"
                   id="drm-toggle"
-                  checked={shouldUseEncryption}
+                  checked={encryptedFromSettings}
                   disabled
                   className="w-5 h-5 text-white rounded focus:ring-white bg-[#252525] border-[#404040] cursor-not-allowed opacity-60"
                 />
@@ -121,7 +65,7 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
                 </label>
               </div>
 
-              {shouldUseEncryption && (
+              {encryptedFromSettings && (
                 <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300 border-t border-[#333333] pt-4">
                   <div className="text-xs sm:text-sm text-[#a0a0a0]">
                     <p className="mb-1 flex items-center gap-1">
@@ -161,10 +105,10 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
                 mode: 'viewer',
                 endpoint: whepEndpoint,
                 merchant,
-                encrypted: shouldUseEncryption,
-                encryptionMode: shouldUseEncryption ? 'cbcs' : undefined,
-                keys: shouldUseEncryption ? 'From .env' : undefined,
-                token: shouldUseEncryption ? 'Auto-generated' : undefined
+                encrypted: encryptedFromSettings,
+                encryptionMode: encryptedFromSettings ? 'cbcs' : undefined,
+                keys: encryptedFromSettings ? 'From .env' : undefined,
+                token: encryptedFromSettings ? 'Auto-generated' : undefined
               }, null, 2)}
             </pre>
           </div>

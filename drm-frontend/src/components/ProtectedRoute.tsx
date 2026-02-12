@@ -22,7 +22,7 @@ export function ProtectedRoute({
   const { isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
 
-  // Check if URL has fullscreen=true parameter (for iframe embedding)
+  // Check if URL has fullscreen=true parameter
   const searchParams = new URLSearchParams(location.search);
   const isFullscreenParam = searchParams.get('fullscreen') === 'true';
 
@@ -38,7 +38,7 @@ export function ProtectedRoute({
     );
   }
 
-  // Bypass auth check if fullscreen=true parameter is present (for iframe embedding)
+  // Bypass auth check if fullscreen=true parameter is present
   if (isFullscreenParam) {
     return <>{children}</>;
   }
