@@ -197,11 +197,17 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         console.log('[Player] Connected - ensuring audio is playing');
         if (audioRef.current.paused) {
           console.log('[Player] Audio is paused, attempting to play');
+          audioRef.current.volume = 1.0;
+          audioRef.current.playbackRate = 1.0;  // Fix chipmunk sound
           audioRef.current.play()
-            .then(() => console.log('[Player] Audio play() succeeded'))
+            .then(() => {
+              console.log('[Player] Audio play() succeeded');
+              console.log('[Player] Audio playbackRate:', audioRef.current?.playbackRate);
+            })
             .catch((e) => console.warn('[Player] Audio play() failed:', e.name, e.message));
         } else {
           console.log('[Player] Audio is already playing');
+          audioRef.current.playbackRate = 1.0;  // Ensure correct rate
         }
         console.log('[Player] Audio volume:', audioRef.current.volume, 'muted:', audioRef.current.muted);
       }
@@ -478,14 +484,17 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         logDebug(`rtcDrmOnTrack succeeded for ${event.track.kind} - Stream is being DECRYPTED`);
         // Explicitly call play() after DRM processes the track (matches whep behavior)
         if (event.track.kind === 'video') {
+          videoElement.playbackRate = 1.0;  // Ensure video plays at normal speed
           videoElement.play()
             .then(() => logDebug('videoElement.play() resolved'))
             .catch((err: any) => logDebug(`videoElement.play() rejected: ${err.message}`));
         } else if (event.track.kind === 'audio') {
+          audioElement.volume = 1.0;
+          audioElement.playbackRate = 1.0;  // Fix chipmunk sound
           audioElement.play()
             .then(() => {
               logDebug('audioElement.play() resolved');
-              console.log('[Player] Audio playing, volume:', audioElement.volume, 'muted:', audioElement.muted);
+              console.log('[Player] Audio playing, volume:', audioElement.volume, 'muted:', audioElement.muted, 'playbackRate:', audioElement.playbackRate);
             })
             .catch((err: any) => logDebug(`audioElement.play() rejected: ${err.message}`));
         }
@@ -514,6 +523,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     if (audioRef.current) {
       audioRef.current.muted = !isMuted;
       audioRef.current.volume = !isMuted ? 1.0 : 0;
+      audioRef.current.playbackRate = 1.0;  // Prevent chipmunk sound
     }
     setIsMuted(!isMuted);
   };
@@ -555,7 +565,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             onCanPlay={() => {
               if (audioRef.current) {
                 audioRef.current.volume = 1.0;
+                audioRef.current.playbackRate = 1.0;  // Prevent chipmunk sound
                 audioRef.current.play().catch(e => console.warn('[Audio] Auto-play failed on canPlay:', e.message));
+                console.log('[Audio] Setup: volume=1.0, playbackRate=1.0');
               }
             }}
           />
@@ -570,6 +582,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 if (audioRef.current) {
                   audioRef.current.muted = false;
                   audioRef.current.volume = 1.0;
+                  audioRef.current.playbackRate = 1.0;  // Fix chipmunk sound
                   // Force audio to play
                   audioRef.current.play().catch(e => console.warn('[Player] Audio play failed:', e.message));
                 }
@@ -688,6 +701,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                             if (audioRef.current) {
                               audioRef.current.muted = false;
                               audioRef.current.volume = 1.0;
+                              audioRef.current.playbackRate = 1.0;  // Fix chipmunk sound
                               audioRef.current.play().catch(e => console.warn('Audio play failed:', e.message));
                             }
                             setIsMuted(false);
@@ -745,7 +759,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 onCanPlay={() => {
                   if (audioRef.current) {
                     audioRef.current.volume = 1.0;
+                    audioRef.current.playbackRate = 1.0;  // Prevent chipmunk sound
                     audioRef.current.play().catch(e => console.warn('[Audio] Auto-play failed on canPlay:', e.message));
+                    console.log('[Audio] Setup: volume=1.0, playbackRate=1.0');
                   }
                 }}
               />

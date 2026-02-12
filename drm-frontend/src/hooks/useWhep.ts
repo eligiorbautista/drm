@@ -98,7 +98,7 @@ export function useWhep() {
           if (videoElement) {
             console.log('[non-DRM] Assigning stream to video element');
             videoElement.srcObject = streamRef.current;
-            videoElement.volume = 1.0;
+            videoElement.playbackRate = 1.0;  // Ensure normal speed
             videoElement.play().catch((e) =>
               console.warn('[non-DRM] video.play() rejected:', e.message)
             );
@@ -111,6 +111,7 @@ export function useWhep() {
             console.log('[non-DRM] Assigning stream to audio element');
             audioElement.srcObject = streamRef.current;
             audioElement.volume = 1.0;
+            audioElement.playbackRate = 1.0;  // Fix chipmunk sound
             audioElement.muted = false;
             audioElement.play().catch((e) =>
               console.warn('[non-DRM] audio.play() rejected:', e.message)
