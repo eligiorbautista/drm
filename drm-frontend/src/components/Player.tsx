@@ -665,18 +665,57 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     logDebug(`╚════════════════════════════════════════════════════════════════════════════════╝`);
 
     try {
+      logDebug('Calling rtcDrmConfigure with:', {
+        platform: isIOS ? 'iOS' : 'Desktop',
+        audioCodec: drmConfig.audio.codec,
+        videoCodec: drmConfig.video.codec,
+        encryption: drmConfig.video.encryption,
+        robustness: drmConfig.video.robustness
+      });
       rtcDrmConfigure(drmConfig);
       logDebug('rtcDrmConfigure succeeded - License request sent to DRMtoday, waiting for callback...');
+      console.log('[Player] DRM configuration successful, waiting for stream tracks...');
     } catch (err: any) {
-      logDebug(`rtcDrmConfigure FAILED: ${err.message}`);
+      logDebug(`✗ rtcDrmConfigure FAILED: ${err.message}`);
+      console.error('[Player] DRM configuration FAILED:', err);
       throw err;
     }
 
     pc.addEventListener('track', (event) => {
-      logDebug(`Track received: ${event.track.kind}`);
+      logDebug(`Track received: ${event.track.kind}, enabled=${event.track.enabled}, readyState=${event.track.readyState}`);
+      
+      // iOS-specific diagnostic logging
+      if (isIOS) {
+        console.log('[iOS DRM] Track received:', {
+          kind: event.track.kind,
+          enabled: event.track.enabled,
+          readyState: event.track.readyState,
+          muted: event.track.muted,
+          label: event.track.label,
+          settings: event.track.getSettings?.() || 'unavailable'
+        });
+      }
+      
       try {
         rtcDrmOnTrack(event);
-        logDebug(`rtcDrmOnTrack succeeded for ${event.track.kind} - Stream is being DECRYPTED`);
+        logDebug(`✓ rtcDrmOnTrack succeeded for ${event.track.kind} - Stream DECRYPTED and processed`);
+        console.log('[Player] DRM processed', event.track.kind, 'track successfully');
+        
+        // iOS-specific: Check if stream was assigned
+        if (isIOS) {
+          setTimeout(() => {
+            const videoStream = videoRef.current?.srcObject as MediaStream;
+            const audioStream = audioRef.current?.srcObject as MediaStream;
+            console.log('[iOS DRM] After rtcDrmOnTrack:', {
+              videoStream: !!videoStream,
+              videoTracks: videoStream?.getVideoTracks?.().length || 0,
+              audioStream: !!audioStream,
+              audioTracks: audioStream?.getAudioTracks?.().length || 0,
+              videoPlaying: !videoRef.current?.paused,
+              audioPlaying: !audioRef.current?.paused
+            });
+          }, 500);
+        }
         // Explicitly call play() after DRM processes the track (matches whep behavior)
         if (event.track.kind === 'video') {
           // Set isPlaying to true when video is ready
@@ -701,10 +740,45 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             .catch((err: any) => logDebug(`audioElement.play() rejected: ${err.message}`));
         }
       } catch (err: any) {
-        logDebug(`rtcDrmOnTrack FAILED: ${err.message}`);
+        logDebug(`✗ rtcDrmOnTrack FAILED: ${err.message}`);
+        console.error('[Player] Failed to process track:', err);
         logError(`DRM Error - The stream might NOT be encrypted or keys don't match: ${err.message}`);
       }
     });
+
+    if (isIOS) {
+      logDebug('========================================');
+      logDebug('iOS DRM DIAGNOSTICS ENABLED');
+      logDebug('========================================');
+      
+      // Periodic check for iOS to see if stream is playing
+      const iosDiagInterval = setInterval(() => {
+        const videoEl = videoRef.current;
+        const audioEl = audioRef.current;
+        if (videoEl && audioEl) {
+          const vStream = videoEl.srcObject as MediaStream;
+          const aStream = audioEl.srcObject as MediaStream;
+          const vTracks = vStream?.getVideoTracks() || [];
+          const aTracks = aStream?.getAudioTracks() || [];
+          
+          console.log('[iOS Diagnostics]', {
+            videoStream: !!vStream,
+            videoTracks: vTracks.length,
+            videoTrackEnabled: vTracks[0]?.enabled,
+            videoTrackReady: vTracks[0]?.readyState,
+            videoPlaying: !videoEl.paused,
+            audioStream: !!aStream,
+            audioTracks: aTracks.length,
+            audioTrackEnabled: aTracks[0]?.enabled,
+            audioTrackReady: aTracks[0]?.readyState,
+            audioPlaying: !audioEl.paused
+          });
+        }
+      }, 3000);
+      
+      // Clean up interval after 30 seconds
+      setTimeout(() => clearInterval(iosDiagInterval), 30000);
+    }
   };
 
   const handleConnect = async () => {

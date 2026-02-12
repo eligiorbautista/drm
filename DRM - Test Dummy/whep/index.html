@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="../media/favicon.ico">
+    <title>castLabs WHEP Player</title>
+    <style>
+        body {
+            background-color: #d2232a;
+            accent-color: black;
+            margin: 0;
+        }
+
+        body, input, option, select, button {
+            font-family: monospace;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        #logo {
+            position: relative;
+            margin: 0 auto;
+            height: 10vh;
+        }
+
+        #video-container {
+            position: relative;
+            margin: 0 auto;
+            width: 100%;
+            height: 70vh;
+        }
+
+        #subscribe-button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3vh;
+            padding: 12px;
+            cursor: pointer;
+        }
+
+        #unsubscribe-button {
+            position: absolute;
+            top: 0%;
+            left: 0%;
+            cursor: pointer;
+        }
+
+        #load-spinner {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            z-index: 1;
+            width: 16vh;
+            height: 16vh;
+            margin: -10vh 0 0 -10vh;
+            border: 2vh solid white;
+            border-radius: 50%;
+            border-top: 2vh solid darkgray;
+            -webkit-animation: spin 2s linear infinite;
+            animation: spin 2s linear infinite;
+        }
+
+        @-webkit-keyframes spin {
+            0% { -webkit-transform: rotate(0deg); }
+            100% { -webkit-transform: rotate(360deg); }
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <script type="module" src="./js/main.js"></script>
+
+    <img src="../media/castlabs-logo.svg" id="logo">
+
+    <hr>
+
+    <div id="video-container">
+        <video id="remote-video" playsinline autoplay></video>
+        <audio id="remote-audio" playsinline autoplay style="display: none"></audio>
+
+        <button id="unsubscribe-button" onclick="unsubscribe()" style="display: none">Unsubscribe</button>
+    </div>
+
+    <button id="subscribe-button" onclick="subscribe()">Subscribe</button>
+    <div id="load-spinner" style="display: none"></div>
+
+    <hr>
+
+    <div id="footer-div">
+        <table>
+            <tr>
+                <td style="text-align:right">WHEP endpoint:</td>
+                <td style="text-align:left"><input id="endpoint" size="70" placeholder="https://whep.org/live/whep/endpoint/stream1"></td>
+            </tr>
+            <tr>
+                <td style="text-align:right">Encrypted:</td>
+                <td style="text-align:left"><input type="checkbox" id="encrypted" autocomplete="off"></td>
+            </tr>
+            <tr>
+                <td style="text-align:right"><abbr title="Switch between lowest latency, but potentially jerky, mode and smooth buffered playback">Buffer Size:</abbr></td>
+                <td style="text-align:left">
+                    <input autocomplete="off" type="range" id="media-buffer" list="media-buffer-options" min="0" max="9" value="0" style="width:100%"/>
+                    <datalist id="media-buffer-options">
+                        <option value="0"></option><option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option>
+                        <option value="5"></option><option value="6"></option><option value="7"></option><option value="8"></option><option value="9"></option>
+                    </datalist>
+                    <output id="media-buffer-selected-option-label">Default</output>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+</body>
+</html>

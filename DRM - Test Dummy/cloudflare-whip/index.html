@@ -1,0 +1,21 @@
+<html>
+	<head>
+		<link rel="stylesheet" href="style.css" />
+        <link rel="icon" type="image/x-icon" href="../media/favicon.ico">
+		<!-- This adapter normalizes cross-browser differences in WebRTC APIs. Currently necessary in order to support Firefox. -->
+		<script
+			src="https://cdnjs.cloudflare.com/ajax/libs/webrtc-adapter/8.1.2/adapter.min.js"
+			integrity="sha512-l40eBFtXx+ve5RryIELC3y6/OM6Nu89mLGQd7fg1C93tN6XrkC3supb+/YiD/Y+B8P37kdJjtG1MT1kOO2VzxA=="
+			crossorigin="anonymous"
+			referrerpolicy="no-referrer"
+		></script>
+	</head>
+	<body>
+		<h4>Broadcasting video using WHIP</h4>
+		<h5>(local mirror)</h5>
+		<video id="input-video" autoplay muted class="local_preview"></video>
+
+        <script type="text/javascript" src="../../crypto/clcrypto.js"></script>
+        <script type="module" src="./main.js" async></script>
+	</body>
+</html>

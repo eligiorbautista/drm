@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="../media/favicon.ico">
+    <title>castLabs WebRTC DRM</title>
+    <style>
+        body {
+            background-color: #d2232a;
+            accent-color: black;
+            margin: 0;
+        }
+
+        body, input, option, select, button {
+            font-family: monospace;
+        }
+
+        video {
+            width: 49vw;
+            object-fit: contain;
+        }
+
+        #local-video {
+            transform: scale(-1, 1);
+            -webkit-transform: scale(-1, 1);
+        }
+
+        #logo {
+            position: relative;
+            margin: 0 auto;
+            height: 10vh;
+        }
+
+        #video-container {
+            position: relative;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        #remote-video-container {
+            position: relative;
+        }
+        #latency-overlay {
+            position: absolute;
+            display: inline-block;
+            top: 0.5vw;
+            left: 0.5vw;
+            padding: 0.5vw;
+            background-color: lightgray;
+            color: black;
+            opacity: 0.6;
+            z-index: 2;
+            pointer-events: none;
+
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        #start-button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3vh;
+            padding: 12px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <script type="module" src="./js/main.js"></script>
+
+    <img src="../media/castlabs-logo.svg" id="logo">
+
+    <div id="drm-div">
+        <hr>
+        <table>
+            <tr>
+                <td style="text-align:right">Encrypt Mode:</td>
+                <td style="text-align:left">
+                    <select id="aes-mode" style="width:fit-content" onchange="selectAesMode(this.selectedIndex)">
+                        <option>AES-CTR</option>
+                        <option selected>AES-CBC</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td style="text-align:right">Key:</td>
+                <td style="text-align:left"><input id="key" size="37" value="3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"></td>
+            </tr>
+            <tr id="iv-tr">
+                <td style="text-align:right">IV:</td>
+                <td style="text-align:left"><input id="iv" size="37" value="d5fbd6b82ed93e4ef98ae40931ee33b7"></td>
+            </tr>
+            <tr>
+                <td style="text-align:right">Decrypt Mode:</td>
+                <td style="text-align:left">
+                    <select id="decrypt-mode" style="width:fit-content" onchange="selectDecryptMode(this.selectedIndex)">
+                        <option selected>ClearKey</option>
+                        <option>Production DRM</option>
+                    </select>
+                </td>
+            </tr>
+            <tr id="dt-merchant-tr" style="display:none">
+                <td style="text-align:right">DRMtoday merchant:</td>
+                <td style="text-align:left"><input id="merchant" size="37" value="sb_live"></td>
+            </tr>
+            <tr id="dt-keyid-tr" style="display:none">
+                <td style="text-align:right">DRMtoday keyId:</td>
+                <td style="text-align:left"><input id="key-id" size="37" value="00000000000000000000000000000001"></td>
+            </tr>
+        </table>
+        <hr>
+    </div>
+
+    <button id="start-button" onclick="start()" disabled>Start</button>
+
+    <div id="video-container">
+        <table>
+            <tr>
+                <td><video id="local-video" playsinline autoplay style="display:none"></video></td>
+                <td>
+                    <div id="remote-video-container">
+                        <div id="latency-overlay" style="font-size:2vw;display:none">0 ms</div>
+                        <video id="remote-video" playsinline autoplay style="display:none"></video>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><audio id="remote-audio" playsinline autoplay style="display:none"></audio></td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>

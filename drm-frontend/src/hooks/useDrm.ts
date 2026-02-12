@@ -13,6 +13,7 @@ export interface UseDrmOptions {
   iv?: Uint8Array;
   mediaBufferMs?: number;
   encryptionMode?: 'cenc' | 'cbcs';
+  isIOS?: boolean;  // iOS requires AAC audio codec for FairPlay
 }
 
 /**
@@ -235,6 +236,10 @@ export function useDrm() {
       robustness: robustness
     };
 
+    // iOS FairPlay requires AAC codec (mp4a.40.2), other platforms use Opus
+    const audioCodec = options.isIOS ? 'mp4a.40.2' as any : 'opus' as const;
+    logDebug(`Audio codec set to: ${audioCodec} (iOS=${options.isIOS || false})`);
+
     const config: DrmConfig = {
       merchant: options.merchant || merchantId,
       userId: options.userId || 'elidev-test',  // Required for Callback Authorization
@@ -242,7 +247,7 @@ export function useDrm() {
       videoElement: options.videoElement,
       audioElement: options.audioElement || undefined,
       video: videoConfig,
-      audio: { codec: 'opus' as const, encryption: 'clear' as const },
+      audio: { codec: audioCodec, encryption: 'clear' as const },
       logLevel: 3,
       mediaBufferMs
     };

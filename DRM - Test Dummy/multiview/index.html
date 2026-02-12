@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="../media/favicon.ico">
+    <title>castLabs WebRTC DRM (Multiview)</title>
+    <style>
+        body {
+            background-color: #d2232a;
+            accent-color: black;
+            margin: 0;
+        }
+
+        body, input, option, select, button {
+            font-family: monospace;
+        }
+
+        video {
+            width: 49vw;
+            object-fit: contain;
+        }
+
+        #logo {
+            position: relative;
+            margin: 0 auto;
+            height: 10vh;
+        }
+
+        #video-container {
+            position: relative;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        #remote-video-container {
+            position: relative;
+        }
+
+        #start-button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3vh;
+            padding: 12px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <script type="module" src="./js/main.js"></script>
+
+    <img src="../media/castlabs-logo.svg" id="logo">
+
+    <div id="drm-div">
+        <hr>
+        <table>
+            <tr>
+                <td style="text-align:right">Encrypt Mode:</td>
+                <td style="text-align:left">
+                    <select id="aes-mode" style="width:fit-content" onchange="selectAesMode(this.selectedIndex)">
+                        <option>AES-CTR</option>
+                        <option selected>AES-CBC</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td style="text-align:right">Key(1):</td>
+                <td style="text-align:left"><input id="key1" size="37" value="3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"></td>
+            </tr>
+            <tr id="iv1-tr">
+                <td style="text-align:right">IV(1):</td>
+                <td style="text-align:left"><input id="iv1" size="37" value="d5fbd6b82ed93e4ef98ae40931ee33b7"></td>
+            </tr>
+            <tr>
+                <td style="text-align:right">Key(2):</td>
+                <td style="text-align:left"><input id="key2" size="37" value="ffffffffffffffffffffffffffffffff"></td>
+            </tr>
+            <tr id="iv2-tr">
+                <td style="text-align:right">IV(2):</td>
+                <td style="text-align:left"><input id="iv2" size="37" value="eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"></td>
+            </tr>
+            <tr>
+                <td style="text-align:right">Decrypt Mode:</td>
+                <td style="text-align:left">
+                    <select id="decrypt-mode" style="width:fit-content" onchange="selectDecryptMode(this.selectedIndex)">
+                        <option selected>In place</option>
+                        <option>Production DRM</option>
+                    </select>
+                </td>
+            </tr>
+            <tr id="dt-merchant-tr" style="display:none">
+                <td style="text-align:right">DRMtoday merchant:</td>
+                <td style="text-align:left"><input id="merchant" size="37" value="sb_live"></td>
+            </tr>
+            <tr id="dt-keyid-tr1" style="display:none">
+                <td style="text-align:right">DRMtoday keyId(1):</td>
+                <td style="text-align:left"><input id="key-id1" size="37" value="00000000000000000000000000000001"></td>
+            </tr>
+            <tr id="dt-keyid-tr2" style="display:none">
+                <td style="text-align:right">DRMtoday keyId(2):</td>
+                <td style="text-align:left"><input id="key-id2" size="37" value="abcdabcdabcdabcdabcdabcdabcdabcd"></td>
+            </tr>
+        </table>
+        <hr>
+    </div>
+
+    <button id="start-button" onclick="onStartButton()" disabled>Start</button>
+
+    <div id="video-container" style="display:none">
+        <table>
+            <tr>
+                <td style="vertical-align:bottom"><video id="local-video" playsinline controls loop muted src="./media/chrome.mp4" type="video/mp4"></video>local</td>
+                <td style="vertical-align:bottom"><video id="remote-video1" playsinline autoplay></video>key(1)<audio id="remote-audio1" playsinline autoplay style="display:none"></audio></td>
+            </tr>
+            <tr>
+                <td style="vertical-align:bottom"><video id="local-video-webcam" playsinline autoplay></video>local</td>
+                <td style="vertical-align:bottom"><video id="remote-video2" playsinline autoplay></video>key(2)<audio id="remote-audio2" playsinline autoplay style="display:none"></audio></td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>
