@@ -610,31 +610,57 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             }}
           />
 
-          {/* Unmute Button - Only visible when loader is gone (stream is playing) */}
-          {isMuted && isPlaying && !isConnecting && !error && !drmError && (
+          {/* Unmute Button - Only visible when loader is gone (stream is playing)
+              In embed mode, show when connected and muted regardless of isPlaying state */}
+          {isMuted && (isEmbedMode ? isConnected : isPlaying) && !isConnecting && !error && !drmError && (
             <button
               onClick={async () => {
-                console.log('[Player] Unmute button clicked');
+                console.log('[Embed Player] Unmute button clicked');
+                
+                // First, ensure video is unmuted and playing
                 if (videoRef.current) {
+                  console.log('[Embed Player] Unmuting video, current muted:', videoRef.current.muted, 'volume:', videoRef.current.volume);
                   videoRef.current.muted = false;
                   videoRef.current.volume = 1.0;
-                  console.log('[Player] Video unmuted');
+                  
+                  // Force video to play
+                  if (videoRef.current.paused) {
+                    console.log('[Embed Player] Video paused, forcing play');
+                    videoRef.current.play().catch(e => console.error('[Embed Player] Video play failed:', e));
+                  }
+                  console.log('[Embed Player] Video unmuted, muted:', videoRef.current.muted, 'volume:', videoRef.current.volume);
                 }
+                
+                // Then ensure audio element is also unmuted
                 if (audioRef.current) {
+                  console.log('[Embed Player] Unmuting audio, current muted:', audioRef.current.muted, 'volume:', audioRef.current.volume);
                   audioRef.current.muted = false;
                   audioRef.current.volume = 1.0;
                   audioRef.current.playbackRate = 1.0;
+                  
                   // Force audio to play
-                  try {
-                    await audioRef.current.play();
-                    console.log('[Player] Audio unmuted and playing');
-                  } catch (e) {
-                    console.warn('[Player] Audio play failed:', e);
+                  if (audioRef.current.paused) {
+                    console.log('[Embed Player] Audio paused, forcing play');
+                    try {
+                      await audioRef.current.play();
+                      console.log('[Embed Player] Audio play succeeded');
+                    } catch (e) {
+                      console.error('[Embed Player] Audio play failed:', e);
+                    }
+                  } else {
+                    console.log('[Embed Player] Audio already playing');
                   }
+                  console.log('[Embed Player] Audio unmuted, muted:', audioRef.current.muted, 'volume:', audioRef.current.volume);
                 }
-                // Update state after refs are updated
+                
+                // Update state after everything is set up
+                console.log('[Embed Player] Setting isMuted to false');
                 setIsMuted(false);
-                console.log('[Player] isMuted state set to false');
+                
+                // Verify the state after a short delay
+                setTimeout(() => {
+                  console.log('[Embed Player] State check - isMuted:', isMuted, 'video muted:', videoRef.current?.muted, 'audio muted:', audioRef.current?.muted);
+                }, 100);
               }}
               className="fixed bottom-4 right-4 z-30 px-4 py-2 bg-[#252525]/80 backdrop-blur-sm text-white rounded-lg flex items-center gap-2 hover:bg-[#333333] transition-colors cursor-pointer border border-[#404040]"
             >
@@ -739,7 +765,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 <div className="absolute top-0 left-0 right-0 z-30 p-4 bg-gradient-to-b from-black/60 to-transparent pointer-events-none">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 pointer-events-auto">
-                      {isMuted && isPlaying && !isConnecting && !error && !drmError && (
+                      {/* Unmute Button - Show when embedded and muted, or fullscreen and muted
+                          In embed mode, show when connected and muted regardless of isPlaying state */}
+                      {isMuted && (isEmbedMode ? isConnected : isPlaying) && !isConnecting && !error && !drmError && (
                         <button
                           onClick={async () => {
                             console.log('[Player] Fullscreen unmute button clicked');
