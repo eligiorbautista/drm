@@ -28,13 +28,24 @@ function checkEmeAvailability(logDebug: (msg: string) => void): Promise<{ availa
   }
 
   // Probe EME with a minimal config to verify the permission is delegated
-  const probeConfigs: MediaKeySystemConfiguration[] = [{
+  // Support both Widevine and FairPlay (Safari) key systems
+  const uaHasIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent) || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
+  const uaHasSafari = /Safari/i.test(navigator.userAgent) && !/Chrome|CriOS|FxiOS/i.test(navigator.userAgent);
+  
+  const probeConfigs: MediaKeySystemConfiguration[] = uaHasIOS || uaHasSafari ? [{
+    // FairPlay config for Safari/iOS
+    initDataTypes: ['sinf', 'webm'],
+    videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }],
+    audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }]
+  }] : [{
+    // Widevine config for Chrome/Edge/Android/PlayReady
     initDataTypes: ['cenc'],
     videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"', robustness: '' }]
   }];
 
-  // Try Widevine first (Chrome/Edge/Android), then FairPlay (Safari), then PlayReady (Edge)
-  const keySystems = ['com.widevine.alpha', 'com.apple.fps.1_0', 'com.microsoft.playready.recommendation'];
+  // Try Widevine first (Chrome/Edge/Android), then FairPlay (Safari/iOS), then PlayReady (Edge)
+  // FairPlay key system: 'com.apple.fps.1_0' (Safari 10+) or 'com.apple.fps' (Safari 11+)
+  const keySystems = ['com.widevine.alpha', 'com.apple.fps.1_0', 'com.apple.fps', 'com.microsoft.playready.recommendation'];
 
   for (const ks of keySystems) {
     try {
@@ -344,11 +355,17 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     const uaHasAndroid = /Android/i.test(navigator.userAgent);
     const uaHasFirefox = /Firefox/i.test(navigator.userAgent);
     const uaHasMobile = /Mobile|Tablet/i.test(navigator.userAgent);
+    const uaHasIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent) || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
+    const uaHasSafari = /Safari/i.test(navigator.userAgent) && !/Chrome|CriOS|FxiOS/i.test(navigator.userAgent);
     
     // Android detection: prioritize userAgent over platform (Firefox/Chrome on Android)
     const isAndroid = uaHasAndroid || 
                       platform.toLowerCase() === 'android' ||
                       (isMobile && /linux/i.test(platform));
+    
+    // iOS/Safari detection
+    const isIOS = uaHasIOS;
+    const isSafari = uaHasSafari;
     
     // Firefox detection: check userAgent (works cross-platform)
     const isFirefox = uaHasFirefox;
@@ -356,8 +373,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     // Windows detection (for non-Firefox browsers)
     const isWindows = !isFirefox && (/windows/i.test(platform) || /Win/i.test(navigator.userAgent));
     
-    const detectedPlatform = isAndroid ? 'Android' : isWindows ? 'Windows' : isFirefox ? 'Firefox' : (platform || 'Unknown');
-    logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, isAndroid=${isAndroid}, isFirefox=${isFirefox}, uaHasMobile=${uaHasMobile}`);
+    const detectedPlatform = isIOS ? 'iOS' : isAndroid ? 'Android' : isWindows ? 'Windows' : isFirefox ? 'Firefox' : (platform || 'Unknown');
+    logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, ios=${isIOS}, safari=${isSafari}, isAndroid=${isAndroid}, isFirefox=${isFirefox}, uaHasMobile=${uaHasMobile}`);
     logDebug(`Detected platform: ${detectedPlatform}`);
 
     const params = new URLSearchParams(window.location.search);
@@ -391,9 +408,16 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     // - Firefox: 900ms minimum (v2.5.1 required to prevent stuttering)
     // - Windows PlayReady/Widevine SW: 600ms minimum
     // - Windows PlayReady/Widevine HW: 1200ms minimum
+    // - iOS/Safari (FairPlay): 600ms minimum
+    // - Android HW (Widevine L1): 1200ms minimum
+    // - Android SW (Widevine L3): 600ms minimum
     // - Default (other browsers): 100ms
     let mediaBufferMs = -1;
-    if (isFirefox) {
+    if (isIOS || isSafari) {
+      // iOS/Safari with FairPlay
+      mediaBufferMs = 600;
+      logDebug(`Set mediaBufferMs=600 for iOS/Safari (FairPlay, documentation recommended)`);
+    } else if (isFirefox) {
       // Firefox specifically needs 900ms minimum to prevent stuttering
       // From client-sdk-changelog.md v2.5.1
       mediaBufferMs = 900;
@@ -423,10 +447,14 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       logDebug(`Set mediaBufferMs=100 (default per documentation)`);
     }
 
+    // iOS/Safari uses FairPlay which requires robustness setting
+    // Safari FairPlay typically doesn't support 'robustness' property like Widevine
+    const robustness = isIOS || isSafari ? undefined : (isAndroid ? androidRobustness : 'SW' as 'HW' | 'SW');
+
     const video = {
       codec: 'H264' as const,
       encryption: 'cbcs' as const,
-      robustness: (isAndroid ? androidRobustness : 'SW') as 'HW' | 'SW',
+      robustness: robustness as 'HW' | 'SW' | undefined,
       keyId,
       iv
     };
@@ -447,7 +475,12 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       videoElement,
       audioElement,
       video,
-      audio: { codec: 'opus' as const, encryption: 'clear' as const },
+      // iOS/Safari FairPlay requires AAC audio codec (mp4a.40.2), while other platforms use opus
+      // Note: Using type assertion because SDK TypeScript definitions don't include 'mp4a.40.2'
+      // but the runtime SDK supports it for FairPlay
+      audio: isIOS || isSafari 
+        ? { codec: 'mp4a.40.2' as any, encryption: 'clear' as const }
+        : { codec: 'opus' as const, encryption: 'clear' as const },
       logLevel: 3,
       mediaBufferMs  // Ultra-low latency buffer for smooth streaming
     };
@@ -598,7 +631,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             playsInline
             muted={isMuted}
             style={{ display: 'none' }}
-            crossOrigin="anonymous"
+            // Note: crossCrossOrigin removed as it causes issues with FairPlay on iOS
             // @ts-ignore - onCanPlay type
             onCanPlay={() => {
               if (audioRef.current) {
@@ -838,7 +871,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 playsInline
                 muted={isMuted}
                 style={{ display: 'none' }}
-                crossOrigin="anonymous"
+                // Note: crossOrigin removed as it causes issues with FairPlay on iOS
                 // @ts-ignore - onCanPlay type
                 onCanPlay={() => {
                   if (audioRef.current) {
