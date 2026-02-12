@@ -36,7 +36,7 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
 
   const openWatchPlayer = () => {
     const watchUrl = getWatchUrl();
-    window.open(watchUrl, 'WatchPlayer', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes');
+    window.open(watchUrl, '_blank', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes');
   };
 
   console.log('[ViewerPage] Config:', {

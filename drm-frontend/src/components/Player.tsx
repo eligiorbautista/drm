@@ -450,7 +450,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       const e = videoElement.error;
       logDebug(`video MediaError: code=${e?.code}, message=${e?.message}`);
     });
-
+    
     videoElement.addEventListener('rtcdrmerror', (event: any) => {
       const msg = event.detail?.message || 'Unknown DRM error';
       logDebug(`DRM ERROR: ${msg}`);

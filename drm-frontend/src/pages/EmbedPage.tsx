@@ -1,10 +1,10 @@
 import { useSearchParams } from 'react-router-dom';
-import { EmbedPlayer } from '../components/EmbedPlayer';
+import { Player } from '../components/Player';
 
 /**
- * Standalone embed player page
- * This page is designed for public/iframe access without authentication
- * Usage: /watch?endpoint=<whep-endpoint>
+ * Standalone embed player page with DRM support
+ * This page is designed for iframe access with DRM decryption
+ * Usage: /embed?endpoint=<whep-endpoint>&encrypted=true
  */
 export function EmbedPage() {
   const [searchParams] = useSearchParams();
@@ -16,11 +16,34 @@ export function EmbedPage() {
   const defaultWhepPath = import.meta.env.VITE_WHEP_ENDPOINT_DEFAULT;
   const endpoint = endpointParam || (streamDomain + defaultWhepPath);
   
-  console.log('[EmbedPage] Endpoint:', endpoint, endpointParam ? '(from URL)' : '(default)');
+  // Get encryption setting from URL parameter
+  // ?encrypted=true enables DRM decryption
+  const encryptedParam = searchParams.get('encrypted');
+  const encrypted = encryptedParam === 'true';
+  
+  // Get merchant and userId from URL or use defaults
+  const merchantParam = searchParams.get('merchant');
+  const userIdParam = searchParams.get('userId');
+  
+  const merchant = merchantParam || import.meta.env.VITE_DRM_MERCHANT;
+  const userId = userIdParam || 'elidev-test';
+  
+  console.log('[EmbedPage] Config:', {
+    endpoint: endpointParam ? '(from URL)' : '(default)',
+    encrypted,
+    merchant,
+    userId
+  });
   
   return (
     <div className="min-h-screen bg-black m-0 p-0">
-      <EmbedPlayer endpoint={endpoint} />
+      <Player 
+        endpoint={endpoint}
+        merchant={merchant}
+        userId={userId}
+        encrypted={encrypted}
+        isEmbedMode={true}
+      />
     </div>
   );
 }
