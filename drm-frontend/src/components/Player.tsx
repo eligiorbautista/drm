@@ -336,21 +336,21 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
 
     // Media buffer sizing:
-    // - Android HW (Widevine L1) needs at least 1200ms
-    // - Firefox needs at least 900ms (from client-sdk-changelog.md)
-    // - Other platforms (Chrome/Edge SW on Linux/macOS/Windows) need at least 600ms for SW-secure decryption
+    // - Android HW (Widevine L1) needs at least 2000ms to handle frame gaps
+    // - Firefox needs at least 1200ms to prevent stuttering and frame gaps
+    // - Other platforms (Chrome/Edge SW on Linux/macOS/Windows) need at least 800ms for SW-secure decryption
     let mediaBufferMs = -1;
     if (isAndroid && androidRobustness === 'HW') {
+      mediaBufferMs = 2000;
+      logDebug(`Set mediaBufferMs=2000 for Android HW robustness (increased for frame gap handling)`);
+    } else if (isFirefox && mediaBufferMs < 1200) {
+      // Firefox specifically needs 1200ms to prevent stuttering and frame gaps
       mediaBufferMs = 1200;
-      logDebug(`Set mediaBufferMs=1200 for Android HW robustness`);
-    } else if (isFirefox && mediaBufferMs < 900) {
-      // Firefox specifically needs 900ms to prevent stuttering
-      mediaBufferMs = 900;
-      logDebug(`Set mediaBufferMs=900 for Firefox (Firefox-specific requirement)`);
-    } else if (mediaBufferMs < 600) {
-      // Apply 600ms buffer for Software CDMs (Chrome SW, Edge SW on Mac/Linux/Windows, etc.)
-      mediaBufferMs = 600;
-      logDebug(`Set mediaBufferMs=600 for Software DRM/Desktop browsers`);
+      logDebug(`Set mediaBufferMs=1200 for Firefox (increased for frame gap handling)`);
+    } else if (mediaBufferMs < 800) {
+      // Apply 800ms buffer for Software CDMs (Chrome SW, Edge SW on Mac/Linux/Windows, etc.)
+      mediaBufferMs = 800;
+      logDebug(`Set mediaBufferMs=800 for Software DRM/Desktop browsers (increased for frame gap handling)`);
     }
 
     const video = {
@@ -379,7 +379,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       video,
       audio: { codec: 'opus' as const, encryption: 'clear' as const },
       logLevel: 3,
-      mediaBufferMs
+      mediaBufferMs,
+      jitterBufferTarget: isAndroid ? 500 : 300  // Additional buffer for jitter (higher on Android)
     };
 
     // Event listeners (same as whep)
