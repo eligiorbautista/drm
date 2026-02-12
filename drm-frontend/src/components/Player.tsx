@@ -335,23 +335,41 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       logDebug(`Robustness overridden via URL param: ${robustnessOverride}`);
     }
 
-    // Media buffer sizing - OPTIMIZED FOR ULTRA-LOW LATENCY SMOOTH STREAMING:
-    // Lower buffer = less lag, but more sensitive to frame gaps
-    // Higher buffer = smoother playback, but more latency
-    // For smooth + low-latency: use minimal buffers that still maintain stability
+    // Media buffer sizing - BASED ON OFFICIAL DOCUMENTATION RECOMMENDATIONS:
+    // From castLabs SDK changelog and integration guide:
+    // - Firefox: 900ms minimum (v2.5.1 required to prevent stuttering)
+    // - Windows PlayReady/Widevine SW: 600ms minimum
+    // - Windows PlayReady/Widevine HW: 1200ms minimum
+    // - Default (other browsers): 100ms
     let mediaBufferMs = -1;
-    if (isAndroid) {
-      // Android needs more buffer due to mobile network variability
-      mediaBufferMs = 1000;  // 1 second - good balance for mobile
-      logDebug(`Set mediaBufferMs=1000 for Android (low-latency optimized)`);
-    } else if (isFirefox) {
-      // Firefox works well with moderate buffer
-      mediaBufferMs = 500;  // 500ms - ultra-low latency for Firefox
-      logDebug(`Set mediaBufferMs=500 for Firefox (ultra-low-latency optimized)`);
+    if (isFirefox) {
+      // Firefox specifically needs 900ms minimum to prevent stuttering
+      // From client-sdk-changelog.md v2.5.1
+      mediaBufferMs = 900;
+      logDebug(`Set mediaBufferMs=900 for Firefox (documentation recommended)`);
+    } else if (isAndroid) {
+      // Android follows same requirements as Windows:
+      // - HW (Widevine L1): 1200ms minimum
+      // - SW (Widevine L3): 600ms minimum
+      if (androidRobustness === 'HW') {
+        mediaBufferMs = 1200;
+        logDebug(`Set mediaBufferMs=1200 for Android HW (Widevine L1, documentation minimum)`);
+      } else {
+        mediaBufferMs = 600;
+        logDebug(`Set mediaBufferMs=600 for Android SW (Widevine L3, documentation minimum)`);
+      }
+    } else if (isWindows) {
+      // Windows PlayReady/Widevine requirements from client-integration-guide.md:
+      // - SW-secure: 600ms minimum
+      // - HW-secure: 1200ms minimum
+      // Default to SW-secure for Edge/Chrome on Windows
+      mediaBufferMs = 600;
+      logDebug(`Set mediaBufferMs=600 for Windows (playback minimum from documentation)`);
     } else {
-      // Chrome/Edge on desktop - minimal buffer for lowest latency
-      mediaBufferMs = 300;  // 300ms - ultra-low latency, minimal lag
-      logDebug(`Set mediaBufferMs=300 for Desktop (ultra-low-latency optimized)`);
+      // Default for other browsers (Chrome/Edge on macOS/Linux, etc.)
+      // Default value is 100ms per documentation
+      mediaBufferMs = 100;
+      logDebug(`Set mediaBufferMs=100 (default per documentation)`);
     }
 
     const video = {
