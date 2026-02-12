@@ -294,6 +294,15 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     const uaHasFirefox = /Firefox/i.test(navigator.userAgent);
     const uaHasMobile = /Mobile|Tablet/i.test(navigator.userAgent);
     
+    // iOS detection: check for iPhone, iPad, iPod, or iOS in userAgent
+    // iOS uses Safari/FairPlay which requires iv but handles keyId differently
+    const uaHasIOS = /iPhone|iPad|iPod|iOS/i.test(navigator.userAgent);
+    const isIOS = uaHasIOS || platform.toLowerCase() === 'ios';
+    
+    // Safari detection: Safari on macOS uses FairPlay
+    const uaHasSafari = /Safari/i.test(navigator.userAgent) && !/Chrome/i.test(navigator.userAgent);
+    const isSafari = uaHasSafari || (platform.toLowerCase().includes('mac') && uaHasSafari);
+    
     // Android detection: prioritize userAgent over platform (Firefox/Chrome on Android)
     const isAndroid = uaHasAndroid || 
                       platform.toLowerCase() === 'android' ||
@@ -305,9 +314,15 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     // Windows detection (for non-Firefox browsers)
     const isWindows = !isFirefox && (/windows/i.test(platform) || /Win/i.test(navigator.userAgent));
     
-    const detectedPlatform = isAndroid ? 'Android' : isWindows ? 'Windows' : isFirefox ? 'Firefox' : (platform || 'Unknown');
-    logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, isAndroid=${isAndroid}, isFirefox=${isFirefox}, uaHasMobile=${uaHasMobile}`);
-    logDebug(`Detected platform: ${detectedPlatform}`);
+    // Platform detection priority: iOS > Android > Windows > Firefox > Safari > Unknown
+    const detectedPlatform = isIOS ? 'iOS' : 
+                           isAndroid ? 'Android' : 
+                           isWindows ? 'Windows' : 
+                           isFirefox ? 'Firefox' : 
+                           isSafari ? 'Safari' : 
+                           (platform || 'Unknown');
+    logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, isAndroid=${isAndroid}, isFirefox=${isFirefox}, isIOS=${isIOS}, isSafari=${isSafari}, uaHasMobile=${uaHasMobile}`);
+    logDebug(`Detected platform: ${detectedPlatform} (FairPlay: ${isIOS || isSafari})`);
 
     const params = new URLSearchParams(window.location.search);
     const robustnessOverride = params.get('robustness')?.toUpperCase();
@@ -353,13 +368,33 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       logDebug(`Set mediaBufferMs=600 for Software DRM/Desktop browsers`);
     }
 
-    const video = {
-      codec: 'H264' as const,
-      encryption: 'cbcs' as const,
-      robustness: (isAndroid ? androidRobustness : 'SW') as 'HW' | 'SW',
-      keyId,
-      iv
-    };
+    // iOS/FairPlay handling:
+    // - FairPlay requires iv for initialization
+    // - keyId may be omitted or handled differently on iOS
+    // - Safari/FairPlay uses fpsCertificate and fpsLicenseUrl if needed
+    let videoConfig;
+    if (isIOS) {
+      // iOS FairPlay: requires iv, keyId may be embedded in the stream or SKD URL
+      videoConfig = {
+        codec: 'H264' as const,
+        encryption: 'cbcs' as const,
+        robustness: 'SW' as const, // iOS FairPlay doesn't support robustness param
+        iv  // iv is REQUIRED for FairPlay
+        // Note: keyId is often omitted for FairPlay as it's extracted from SKD URL
+        // Only include keyId if specifically needed for this stream
+      };
+      logDebug('iOS/FairPlay detected - using iv (keyId handled by FairPlay SKD URL)');
+    } else {
+      // Other platforms (Android, Windows, Firefox, macOS Safari, etc.)
+      videoConfig = {
+        codec: 'H264' as const,
+        encryption: 'cbcs' as const,
+        robustness: (isAndroid ? androidRobustness : 'SW') as 'HW' | 'SW',
+        keyId,  // Widevine/PlayReady require explicit keyId
+        iv   // iv is also used by other DRM systems
+      };
+      logDebug(`${detectedPlatform} detected - using explicit keyId and iv`);
+    }
 
     // CALLBACK AUTHORIZATION MODE
     // With Callback Authorization, DRMtoday calls our backend at /api/callback
@@ -370,17 +405,25 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     const videoElement = videoRef.current!;
     const audioElement = audioRef.current!;
 
-    const drmConfig = {
+    // Build DRM config with platform-specific settings
+    const drmConfig: any = {
       merchant: merchant || import.meta.env.VITE_DRM_MERCHANT,
       userId: userId || 'elidev-test',  // Required for Callback Authorization
       environment: rtcDrmEnvironments.Staging,
       videoElement,
       audioElement,
-      video,
+      video: videoConfig,
       audio: { codec: 'opus' as const, encryption: 'clear' as const },
       logLevel: 3,
       mediaBufferMs
     };
+
+    // Add FairPlay-specific configuration for iOS/Safari
+    if (isIOS || isSafari) {
+      logDebug(`Adding FairPlay-specific config for ${isIOS ? 'iOS' : 'Safari'}`);
+      // FairPlay uses fpsCertificateUrl and fpsLicenseUrl if custom endpoints needed
+      // The default DRMtoday endpoints are used automatically if not specified
+    }
 
     // Event listeners (same as whep)
     for (const evName of ['loadedmetadata', 'loadeddata', 'canplay', 'playing', 'waiting', 'stalled', 'error', 'emptied', 'suspend']) {
@@ -417,7 +460,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       }
     });
 
-    logDebug(`DRM config: isAndroid=${isAndroid}, encryption=${video.encryption}, robustness=${video.robustness}, mediaBufferMs=${mediaBufferMs}`);
+    logDebug(`DRM config: isIOS=${isIOS}, isAndroid=${isAndroid}, encryption=${videoConfig.encryption}, robustness=${videoConfig.robustness || 'N/A'}, mediaBufferMs=${mediaBufferMs}`);
     logDebug(`[Callback Auth] Merchant: ${merchant || import.meta.env.VITE_DRM_MERCHANT}, KeyId: ${import.meta.env.VITE_DRM_KEY_ID}`);
     logDebug(`[Callback Auth] DRMtoday License Server: ${rtcDrmEnvironments.Staging.baseUrl()}`);
     logDebug(`[Callback Auth] DRMtoday will call your backend at: ${import.meta.env.VITE_DRM_BACKEND_URL}/api/callback`);
