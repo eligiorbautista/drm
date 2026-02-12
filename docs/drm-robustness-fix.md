@@ -33,20 +33,68 @@ Based on the `client-integration-guide.md` documentation:
 
 ### What is Robustness?
 
-Robustness describes the security level of the Content Decryption Module (CDM):
+Robustness describes the security level of the Content Decryption Module (CDM).
 
-**SW (Software) / SW_SECURE_CRYPTO:**
-- Decryption happens in software
-- Less secure than hardware-based DRM
-- Works on most platforms
-- Requires **at least 600ms buffer** for smooth playback (per client-integration-guide.md)
+### ⚠️ Important: Two Different Robustness Contexts
 
-**HW (Hardware) / HW_SECURE_ALL:**
-- Decryption happens in hardware (TEE, Secure Enclave)
-- More secure than software-based DRM
-- Enforces output protection (HDCP)
-- Required on **Android for output protection to work** (per client-integration-guide.md)
-- Requires **at least 1200ms buffer** for smooth playback (per client-integration-guide.md)
+There are **two different robustness value systems**:
+
+1. **EME (Encrypted Media Extensions) Probe** - Used when calling `navigator.requestMediaKeySystemAccess()`
+2. **castLabs rtc-drm-transform Video Config** - Used in the video config object passed to `rtcDrmConfigure()`
+
+#### 1. EME Probe Robustness Values
+
+For EME probes (checking if a key system is available), the W3C EME specification defines these valid robustness strings:
+
+For **Widevine** and **PlayReady**:
+- `SW_SECURE_CRYPTO` - Software cryptographic processing
+- `SW_SECURE_DECODE` - Software cryptographic and video decoding
+- `HW_SECURE_CRYPTO` - Hardware cryptographic processing
+- `HW_SECURE_DECODE` - Hardware cryptographic and video decoding
+- `HW_SECURE_ALL` - Hardware DRM processing for all operations
+
+For **FairPlay**:
+- The robustness parameter is **not supported** and should be omitted
+
+**Example:**
+```typescript
+await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
+  initDataTypes: ['cenc'],
+  videoCapabilities: [{ 
+    contentType: 'video/mp4; codecs="avc1.42E01E"', 
+    robustness: 'SW_SECURE_CRYPTO'  ← EME value
+  }]
+}]);
+```
+
+#### 2. castLabs rtc-drm-transform Video Config Robustness
+
+The castLabs `rtc-drm-transform` library **ONLY accepts** two values for the video config robustness:
+- `'SW'` - Software security
+- `'HW'` - Hardware security
+
+**Example:**
+```typescript
+const videoConfig = {
+  codec: 'H264',
+  encryption: 'cbcs',
+  robustness: 'SW',  ← castLabs value, NOT 'SW_SECURE_CRYPTO'
+  keyId,
+  iv
+};
+```
+
+❌ **DON'T DO THIS:**
+```typescript
+robustness: 'SW_SECURE_CRYPTO'  // Will throw: "RangeError: DRM config robustness can only be one of: SW, HW"
+```
+
+### Security Level Mapping
+
+| castLabs Value | EME Probes | Description | Buffer Requirement |
+|----------------|------------|-------------|-------------------|
+| `'SW'` | `SW_SECURE_CRYPTO` | Software cryptographic processing | 600ms minimum |
+| `'HW'` | `HW_SECURE_ALL` | Hardware DRM processing | 1200ms minimum |
 
 ### When is Robustness Required?
 
@@ -86,8 +134,9 @@ For **FairPlay**:
 
 ## Fix Applied
 
-### Before (Single Probe Config)
+### Part 1: EME Probe Configuration (Check EME Availability)
 
+**Before (Single Probe Config):**
 ```typescript
 const probeConfigs: MediaKeySystemConfiguration[] = [{
   initDataTypes: ['cenc'],
@@ -106,8 +155,7 @@ for (const ks of keySystems) {
 - FairPlay incorrectly receives a robustness value
 - EME system warns about missing/invalid robustness
 
-### After (Key System-Specific Probe Configs)
-
+**After (Key System-Specific Probe Configs):**
 ```typescript
 const keySystems = ['com.widevine.alpha', 'com.apple.fps.1_0', 'com.microsoft.playready.recommendation'];
 
@@ -122,12 +170,12 @@ for (const ks of keySystems) {
         videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }]
       }];
     } else {
-      // Widevine and PlayReady: Specify robustness to avoid EME warnings
+      // Widevine and PlayReady: Specify EME robustness to avoid warnings
       probeConfigs = [{
         initDataTypes: ['cenc'],
-        videoCapabilities: [{ 
-          contentType: 'video/mp4; codecs="avc1.42E01E"', 
-          robustness: 'SW_SECURE_CRYPTO' 
+        videoCapabilities: [{
+          contentType: 'video/mp4; codecs="avc1.42E01E"',
+          robustness: 'SW_SECURE_CRYPTO'  // ← EME-specific value
         }]
       }];
     }
@@ -141,8 +189,65 @@ for (const ks of keySystems) {
 
 **Benefits:**
 - FairPlay doesn't receive robustness parameter (correct behavior)
-- Widevine and PlayReady receive valid robustness value
+- Widevine and PlayReady receive valid EME robustness value
 - EME system doesn't issue warnings
+
+---
+
+### Part 2: castLabs Video Configuration (Actual DRM Playback)
+
+**Before (Invalid Values):**
+```typescript
+videoConfig = {
+  codec: 'H264' as const,
+  encryption: 'cbcs' as const,
+  robustness: 'SW_SECURE_CRYPTO' as any,  // ❌ WRONG! castLabs doesn't accept this
+  keyId,
+  iv
+};
+```
+
+**Error:**
+```
+RangeError: DRM config robustness can only be one of: SW, HW
+```
+
+**After (Valid Values):**
+```typescript
+videoConfig = {
+  codec: 'H264' as const,
+  encryption: 'cbcs' as const,
+  robustness: 'SW' as 'SW' | 'HW',  // ✅ CORRECT! castLabs library only accepts 'SW' or 'HW'
+  keyId,
+  iv
+};
+```
+
+**Android HW Example:**
+```typescript
+if (isAndroid && androidRobustness === 'HW') {
+  videoConfig = {
+    codec: 'H264',
+    encryption: 'cbcs',
+    robustness: 'HW',  // Hardware security for output protection
+    keyId,
+    iv
+  };
+}
+```
+
+**FairPlay Example:**
+```typescript
+if (isIOS) {
+  videoConfig = {
+    codec: 'H264',
+    encryption: 'cbcs',
+    robustness: 'SW',  // FairPlay ignores this, but castLabs requires it
+    iv
+    // keyId is handled by FairPlay SKD URL
+  };
+}
+```
 
 ## Additional Considerations
 
@@ -183,44 +288,102 @@ if (isAndroid && androidRobustness === 'HW') {
 
 ## Platform-Specific Robustness Recommendations
 
-| Platform | Browser | DRM System | Recommended Robustness |
-|----------|---------|------------|------------------------|
-| iOS | Safari | FairPlay | N/A (not supported) |
-| macOS | Safari | FairPlay | N/A (not supported) |
-| macOS | Chrome/Edge | Widevine | `SW_SECURE_CRYPTO` |
-| macOS | Firefox | Widevine | `SW_SECURE_CRYPTO` |
-| Windows | Chrome/Edge | Widevine | `SW_SECURE_CRYPTO` or `HW_SECURE_ALL` |
-| Windows | Firefox | Widevine | `SW_SECURE_CRYPTO` |
-| Android | Chrome | Widevine | `HW_SECURE_ALL` (for output protection) |
-| Android | Firefox | Widevine | `HW_SECURE_ALL` (for output protection) |
-| Linux | Chrome/Firefox | Widevine | `SW_SECURE_CRYPTO` |
+### castLabs Video Config Values (for `rtcDrmConfigure`)
+
+| Platform | Browser | DRM System | castLabs Robustness | Notes |
+|----------|---------|------------|---------------------|-------|
+| iOS | Safari | FairPlay | `'SW'` | FairPlay ignores this, but castLabs requires it |
+| macOS | Safari | FairPlay | `'SW'` | FairPlay ignores this, but castLabs requires it |
+| macOS | Chrome/Edge | Widevine | `'SW'` | Software security |
+| macOS | Firefox | Widevine | `'SW'` | Software security |
+| Windows | Chrome/Edge | Widevine | `'SW'` or `'HW'` | Software by default, HW if available |
+| Windows | Firefox | Widevine | `'SW'` | Software security |
+| Android | Chrome | Widevine | `'HW'` (recommended) | Required for output protection |
+| Android | Firefox | Widevine | `'HW'` (recommended) | Required for output protection |
+| Linux | Chrome/Firefox | Widevine | `'SW'` | Software security |
+
+### EME Probe Values (for `navigator.requestMediaKeySystemAccess`)
+
+| Platform | Browser | DRM System | EME Probe Robustness |
+|----------|---------|------------|----------------------|
+| iOS | Safari | FairPlay | (omit - not supported) |
+| macOS | Safari | FairPlay | (omit - not supported) |
+| All Others | Chrome/Edge/Firefox | Widevine/PlayReady | `'SW_SECURE_CRYPTO'` |
+
+**Key Point:** Use EME values for the **probe** and castLabs values for the **video config**.
 
 ## Testing
 
-After applying this fix, the warning should no longer appear on any platform:
+After applying this fix, the following issues should be resolved:
 
-### Windows (Chrome/Edge/Firefox)
-- ✅ No robustness warning
-- ✅ EME probe passes with `SW_SECURE_CRYPTO`
+### Issue 1: EME Robustness Warning (Windows/Desktop Browsers)
+**Before:**
+```
+It is recommended that a robustness level be specified. Not specifying the robustness level could result in unexpected behavior.
+```
 
-### macOS (Safari)
-- ✅ No robustness warning (FairPlay doesn't use robustness)
-- ✅ EME probe passes without robustness parameter
+**After:**
+- ✅ No EME robustness warning
+- ✅ EME probe passes with `SW_SECURE_CRYPTO` for Widevine/PlayReady
+- ✅ FairPlay probe passes without robustness parameter
 
-### macOS (Chrome/Edge/Firefox)
-- ✅ No robustness warning
-- ✅ EME probe passes with `SW_SECURE_CRYPTO`
+### Issue 2: castLabs Library RangeError
+**Before:**
+```
+RangeError: DRM config robustness can only be one of: SW, HW
+```
 
-### Android
-- ✅ No robustness warning
-- ✅ EME probe passes with `HW_SECURE_ALL` (if L1) or `SW_SECURE_CRYPTO` (if L3)
-- ✅ Output protection works with `HW` robustness
+**After:**
+- ✅ No RangeError
+- ✅ Video config uses valid castLabs values: `'SW'` or `'HW'`
+- ✅ DRM playback works on all platforms
+
+### Platform-Specific Testing
+
+**Windows (Chrome/Edge/Firefox):**
+- ✅ No EME warning
+- ✅ No RangeError
+- ✅ Playback with SW robustness
+
+**macOS (Safari):**
+- ✅ No EME warning
+- ✅ No RangeError
+- ✅ FairPlay playback
+
+**macOS (Chrome/Edge/Firefox):**
+- ✅ No EME warning
+- ✅ No RangeError
+- ✅ Playback with SW robustness
+
+**Android:**
+- ✅ No EME warning
+- ✅ No RangeError
+- ✅ Playback with HW robustness (if L1) or SW (if L3)
+- ✅ Output protection works with HW robustness
 
 ## Summary
 
-The robustness warning was caused by using an empty string for the robustness parameter in the EME probe configuration. The fix uses key system-specific probe configurations:
+Two separate issues were fixed:
 
-- **FairPlay**: No robustness parameter (not supported)
-- **Widevine/PlayReady**: `SW_SECURE_CRYPTO` (software crypto, recommended for desktop)
+### Issue 1: EME Robustness Warning
+The EME probe was using an empty string or incorrect robustness values, causing browser warnings.
 
-This ensures best practices are followed for each DRM system and eliminates the browser warning while maintaining compatibility across all platforms.
+**Fix:** Use EME-specific robustness values (`'SW_SECURE_CRYPTO'`, `'HW_SECURE_ALL'`) in the probe configuration, and omit robustness for FairPlay.
+
+### Issue 2: castLabs RangeError
+The video config used EME-specific robustness values, but the castLabs `rtc-drm-transform` library only accepts `'SW'` or `'HW'`.
+
+**Fix:** Use castLabs-specific robustness values (`'SW'`, `'HW'`) in the video configuration passed to `rtcDrmConfigure()`.
+
+### Key Takeaway
+
+**There are two different robustness value systems:**
+
+1. **EME Probe** → Use EME values (`'SW_SECURE_CRYPTO'`, `'HW_SECURE_ALL'`)
+2. **castLabs Video Config** → Use castLabs values (`'SW'`, `'HW'`)
+
+Mixing these values will cause errors:
+- Using castLabs values in EME probe: May work but triggers warnings
+- Using EME values in castLabs video config: **Causes RangeError**
+
+Both fixes ensure proper behavior for each DRM system across all platforms.

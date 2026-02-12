@@ -398,38 +398,37 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     let videoConfig;
     if (isIOS) {
       // iOS FairPlay: requires iv, keyId may be embedded in the stream or SKD URL
+      // castLabs library only accepts 'SW' or 'HW' for robustness
       videoConfig = {
         codec: 'H264' as const,
         encryption: 'cbcs' as const,
-        // FairPlay doesn't support robustness, but omitting it causes EME warning
-        // So we specify it even though Safari ignores it
-        robustness: 'SW_SECURE_CRYPTO' as any,
+        robustness: 'SW' as 'SW' | 'HW',
         iv  // iv is REQUIRED for FairPlay
         // Note: keyId is often omitted for FairPlay as it's extracted from SKD URL
         // Only include keyId if specifically needed for this stream
       };
-      logDebug('iOS/FairPlay detected - using iv (keyId handled by FairPlay SKD URL) with SW_SECURE_CRYPTO robustness');
+      logDebug('iOS/FairPlay detected - using iv (keyId handled by FairPlay SKD URL) with SW robustness');
     } else if (isAndroid && androidRobustness === 'HW') {
       // Android with Widevine L1 hardware security
       videoConfig = {
         codec: 'H264' as const,
         encryption: 'cbcs' as const,
-        robustness: 'HW_SECURE_ALL' as any,
+        robustness: 'HW' as 'SW' | 'HW',
         keyId,  // Widevine/PlayReady require explicit keyId
         iv   // iv is also used by other DRM systems
       };
-      logDebug(`Android HW (Widevine L1) detected - using HW_SECURE_ALL robustness`);
+      logDebug(`Android HW (Widevine L1) detected - using HW robustness`);
     } else {
       // Other platforms (Windows, Firefox, macOS Chrome/Edge, etc.)
-      // Use software security with crypto operations for wider compatibility
+      // Use software security for wider compatibility
       videoConfig = {
         codec: 'H264' as const,
         encryption: 'cbcs' as const,
-        robustness: 'SW_SECURE_CRYPTO' as any,
+        robustness: (isAndroid ? 'HW' : 'SW') as 'SW' | 'HW',
         keyId,  // Widevine/PlayReady require explicit keyId
         iv   // iv is also used by other DRM systems
       };
-      logDebug(`${detectedPlatform} detected - using SW_SECURE_CRYPTO robustness (software security)`);
+      logDebug(`${detectedPlatform} detected - using ${(isAndroid ? 'HW' : 'SW')} robustness`);
     }
 
     // CALLBACK AUTHORIZATION MODE
