@@ -398,7 +398,7 @@ export default function App() {
                 <Route
                   path="/embed"
                   element={
-                    <ProtectedRoute requireAuth={false}>
+                    <ProtectedRoute requireAuth={false} allowRedirect={false}>
                       <ViewerPage isEmbedMode={true} />
                     </ProtectedRoute>
                   }

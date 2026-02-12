@@ -11,11 +11,13 @@ import { useAuth } from '../context/AuthContext';
 interface ProtectedRouteProps {
   children: React.ReactNode;
   requireAuth?: boolean;
+  allowRedirect?: boolean;  // If false, don't redirect authenticated users away from this route
 }
 
 export function ProtectedRoute({
   children,
   requireAuth = true,
+  allowRedirect = true,  // Default to allowing redirect for backwards compatibility
 }: ProtectedRouteProps) {
   const { isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
@@ -47,7 +49,8 @@ export function ProtectedRoute({
   }
 
   // Redirect to viewer if auth is not required but user is authenticated (e.g., login page)
-  if (!requireAuth && isAuthenticated) {
+  // Only do this if allowRedirect is true (default behavior for login page)
+  if (!requireAuth && isAuthenticated && allowRedirect) {
     return <Navigate to="/viewer" replace />;
   }
 
