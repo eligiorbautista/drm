@@ -69,9 +69,12 @@ export function useWhep() {
       pc.addTransceiver('audio', { direction: 'recvonly' });
 
       // Configure DRM or setup direct playback
+      console.log('[useWhep] encrypted:', encrypted, 'configureDrm:', !!configureDrm);
       if (encrypted && configureDrm) {
         logToDebug('info', 'Configuring DRM for encrypted stream...');
+        console.log('[useWhep] Calling configureDrm...');
         await configureDrm(pc);
+        console.log('[useWhep] configureDrm completed');
       } else {
         logToDebug('info', 'Setting up non-DRM playback...');
         // Direct playback without DRM — mirrors whep's onTrack pattern exactly

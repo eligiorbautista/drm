@@ -90,6 +90,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
 
   // In embed mode, disable all logging for security and clean output
+  // TEMPORARILY ENABLED FOR DEBUGGING DRM DECRYPTION ISSUES
   const broadcastDebugEvent = isEmbedMode ? () => {} : (detail: { id: string; level: 'info' | 'error' | 'warning'; message: string }) => {
     const event = new CustomEvent('debug-log', {
       detail: {
@@ -100,19 +101,19 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     window.dispatchEvent(event);
   };
 
-  const logDebug = isEmbedMode ? () => {} : (...args: any[]) => {
+  const logDebug = isEmbedMode ? (...args: any[]) => console.log('[Player Debug]', ...args) : (...args: any[]) => {
     console.log(...args);
     const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
     broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'info', message });
   };
 
-  const logError = isEmbedMode ? () => {} : (...args: any[]) => {
+  const logError = isEmbedMode ? (...args: any[]) => console.error('[Player Error]', ...args) : (...args: any[]) => {
     console.error(...args);
     const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
     broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'error', message });
   };
 
-  const logWarning = isEmbedMode ? () => {} : (...args: any[]) => {
+  const logWarning = isEmbedMode ? (...args: any[]) => console.warn('[Player Warning]', ...args) : (...args: any[]) => {
     console.warn(...args);
     const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
     broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'warning', message });
@@ -280,6 +281,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
 
   const configureDrm = async (pc: RTCPeerConnection) => {
     // Early check: verify EME is available (catches iframe permission issues)
+    console.log('[Player] configureDrm called with encrypted:', encrypted);
     if (encrypted) {
       logDebug('DRM Encrypted Playback Mode ENABLED');
       const emeCheck = await checkEmeAvailability(logDebug);
@@ -292,7 +294,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       logDebug('EME availability check passed');
     } else {
       logWarning('DRM Encrypted Playback Mode DISABLED - Playing unencrypted stream');
+      console.warn('[DRM] Stream will NOT be decrypted. If you see encrypted video, check the encrypted flag in ViewerPage or EmbedPage.');
     }
+
     const keyId = hexToUint8Array(import.meta.env.VITE_DRM_KEY_ID);
     const iv = hexToUint8Array(import.meta.env.VITE_DRM_IV);
 
@@ -550,8 +554,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     logDebug(`[Callback Auth] UserId: ${userId || 'elidev-test'}`);
     logDebug('[Callback Auth] Mode: ENABLED - Backend provides CRT (no client-side authToken)');
     logDebug('');
-    logDebug('IMPORTANT: DRM will only work if the stream is ENCRYPTED with matching keys!');
-    logDebug('   - Stream MUST be encrypted with the same KEY_ID:KEY_ID}');
+    logDebug(`IMPORTANT: DRM will only work if the stream is ENCRYPTED with matching keys!`);
+    logDebug(`   - Stream MUST be encrypted with the same KEY_ID: ${import.meta.env.VITE_DRM_KEY_ID}`);
     logDebug('   - Otherwise, the player will just play unencrypted content');
     logDebug('');
 

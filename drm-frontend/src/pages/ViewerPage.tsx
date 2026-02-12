@@ -2,8 +2,23 @@ import { useState } from 'react';
 import { Player } from '../components/Player';
 import { useEncryption } from '../App';
 
-export function ViewerPage({ isEmbedMode }: { isEmbedMode?: boolean } = {}) {
+interface ViewerPageProps {
+  isEmbedMode?: boolean;
+  encrypted?: boolean;  // Optional override for embed mode
+}
+
+export function ViewerPage({ isEmbedMode, encrypted: encryptedOverride }: ViewerPageProps = {}) {
+  // In non-embed mode, use encryption from settings
+  // In embed mode with encryptedOverride, use the override value
+  // In embed mode without override, use encryption from settings
   const { enabled: encryptedFromSettings, loading: encryptionLoading, error: encryptionError } = useEncryption();
+
+  // Determine final encrypted value
+  // If in embed mode with explicit override, use it
+  // Otherwise, use the setting from backend
+  const encrypted = (isEmbedMode && encryptedOverride !== undefined)
+    ? encryptedOverride
+    : encryptedFromSettings;
 
   // State for WHEP endpoint
   const streamDomain = import.meta.env.VITE_CLOUDFLARE_STREAM_DOMAIN;
@@ -14,6 +29,8 @@ export function ViewerPage({ isEmbedMode }: { isEmbedMode?: boolean } = {}) {
 
   console.log('[ViewerPage] Config:', {
     baseSetting: encryptedFromSettings,
+    encryptedOverride,
+    encrypted,
     encryptionLoading,
     encryptionError,
     isEmbedMode
@@ -26,7 +43,7 @@ export function ViewerPage({ isEmbedMode }: { isEmbedMode?: boolean } = {}) {
         endpoint={whepEndpoint}
         merchant={merchant}
         userId="elidev-test"
-        encrypted={encryptedFromSettings}
+        encrypted={encrypted}
         isEmbedMode={isEmbedMode}
       />
     );
