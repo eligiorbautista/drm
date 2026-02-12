@@ -161,12 +161,12 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   useEffect(() => {
     if (isConnected && videoRef.current) {
       console.log('[Player] Connected - ensuring video is playing');
-      
+
       // Check if video is already playing
       if (videoRef.current.paused) {
         console.log('[Player] Video is paused, attempting to play');
         const playPromise = videoRef.current.play();
-        
+
         if (playPromise !== undefined) {
           playPromise.then(() => {
             console.log('[Player] Video play() succeeded');
@@ -190,6 +190,20 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         }
       } else {
         console.log('[Player] Video is already playing');
+      }
+
+      // Also ensure audio is playing
+      if (audioRef.current) {
+        console.log('[Player] Connected - ensuring audio is playing');
+        if (audioRef.current.paused) {
+          console.log('[Player] Audio is paused, attempting to play');
+          audioRef.current.play()
+            .then(() => console.log('[Player] Audio play() succeeded'))
+            .catch((e) => console.warn('[Player] Audio play() failed:', e.name, e.message));
+        } else {
+          console.log('[Player] Audio is already playing');
+        }
+        console.log('[Player] Audio volume:', audioRef.current.volume, 'muted:', audioRef.current.muted);
       }
     }
   }, [isConnected]);
@@ -469,7 +483,10 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             .catch((err: any) => logDebug(`videoElement.play() rejected: ${err.message}`));
         } else if (event.track.kind === 'audio') {
           audioElement.play()
-            .then(() => logDebug('audioElement.play() resolved'))
+            .then(() => {
+              logDebug('audioElement.play() resolved');
+              console.log('[Player] Audio playing, volume:', audioElement.volume, 'muted:', audioElement.muted);
+            })
             .catch((err: any) => logDebug(`audioElement.play() rejected: ${err.message}`));
         }
       } catch (err: any) {
@@ -493,11 +510,12 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   const toggleMute = () => {
     if (videoRef.current) {
       videoRef.current.muted = !isMuted;
-      setIsMuted(!isMuted);
     }
     if (audioRef.current) {
       audioRef.current.muted = !isMuted;
+      audioRef.current.volume = !isMuted ? 1.0 : 0;
     }
+    setIsMuted(!isMuted);
   };
 
   return (
@@ -518,6 +536,12 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             preload="auto"
             // @ts-ignore - controlsList is valid  
             controlsList="nodownload norotate nofullscreen noremoteplayback"
+            // @ts-ignore - onLoadedMetadata type
+            onLoadedMetadata={() => {
+              if (videoRef.current) {
+                videoRef.current.volume = 1.0;
+              }
+            }}
           />
           {/* Hidden audio element for DRM (required by rtc-drm-transform library) */}
           <audio
@@ -526,6 +550,14 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             playsInline
             muted={isMuted}
             style={{ display: 'none' }}
+            crossOrigin="anonymous"
+            // @ts-ignore - onCanPlay type
+            onCanPlay={() => {
+              if (audioRef.current) {
+                audioRef.current.volume = 1.0;
+                audioRef.current.play().catch(e => console.warn('[Audio] Auto-play failed on canPlay:', e.message));
+              }
+            }}
           />
 
           {/* Unmute Button - Only visible when loader is gone (stream is playing) */}
@@ -537,6 +569,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 }
                 if (audioRef.current) {
                   audioRef.current.muted = false;
+                  audioRef.current.volume = 1.0;
+                  // Force audio to play
+                  audioRef.current.play().catch(e => console.warn('[Player] Audio play failed:', e.message));
                 }
                 setIsMuted(false);
                 console.log('[Player] Unmute clicked - unmuted both video and audio elements');
@@ -652,6 +687,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                             }
                             if (audioRef.current) {
                               audioRef.current.muted = false;
+                              audioRef.current.volume = 1.0;
+                              audioRef.current.play().catch(e => console.warn('Audio play failed:', e.message));
                             }
                             setIsMuted(false);
                           }}
@@ -687,6 +724,12 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                   preload="auto"
                   // @ts-ignore - controlsList is valid
                   controlsList="nodownload norotate noremoteplayback"
+                  // @ts-ignore - onLoadedMetadata type
+                  onLoadedMetadata={() => {
+                    if (videoRef.current) {
+                      videoRef.current.volume = 1.0;
+                    }
+                  }}
                 />
               </div>
 
@@ -697,6 +740,14 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 playsInline
                 muted={isMuted}
                 style={{ display: 'none' }}
+                crossOrigin="anonymous"
+                // @ts-ignore - onCanPlay type
+                onCanPlay={() => {
+                  if (audioRef.current) {
+                    audioRef.current.volume = 1.0;
+                    audioRef.current.play().catch(e => console.warn('[Audio] Auto-play failed on canPlay:', e.message));
+                  }
+                }}
               />
 
               {/* Error Overlay */}

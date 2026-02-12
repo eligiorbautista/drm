@@ -98,11 +98,25 @@ export function useWhep() {
           if (videoElement) {
             console.log('[non-DRM] Assigning stream to video element');
             videoElement.srcObject = streamRef.current;
+            videoElement.volume = 1.0;
             videoElement.play().catch((e) =>
               console.warn('[non-DRM] video.play() rejected:', e.message)
             );
           } else {
             console.warn('[non-DRM] videoElement is null, cannot assign stream');
+          }
+
+          // Also assign to audio element for non-DRM playback
+          if (audioElement) {
+            console.log('[non-DRM] Assigning stream to audio element');
+            audioElement.srcObject = streamRef.current;
+            audioElement.volume = 1.0;
+            audioElement.muted = false;
+            audioElement.play().catch((e) =>
+              console.warn('[non-DRM] audio.play() rejected:', e.message)
+            );
+          } else {
+            console.warn('[non-DRM] audioElement is null, cannot assign stream');
           }
         });
       }
