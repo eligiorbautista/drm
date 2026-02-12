@@ -27,17 +27,30 @@ function checkEmeAvailability(logDebug: (msg: string) => void): Promise<{ availa
     return Promise.resolve({ available: false, reason: 'Your browser does not support Encrypted Media Extensions (EME). DRM playback is not possible.' });
   }
 
-  // Probe EME with a minimal config to verify the permission is delegated
-  const probeConfigs: MediaKeySystemConfiguration[] = [{
-    initDataTypes: ['cenc'],
-    videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"', robustness: '' }]
-  }];
-
-  // Try Widevine first (Chrome/Edge/Android), then FairPlay (Safari), then PlayReady (Edge)
+  // Define key system names - try Widevine first (Chrome/Edge/Android), then FairPlay (Safari), then PlayReady (Edge)
   const keySystems = ['com.widevine.alpha', 'com.apple.fps.1_0', 'com.microsoft.playready.recommendation'];
 
+  // Create appropriate probe config per key system
+  // FairPlay (com.apple.fps.1_0) does not support the robustness parameter
+  // Widevine and PlayReady support and recommend specifying robustness
   for (const ks of keySystems) {
     try {
+      let probeConfigs: MediaKeySystemConfiguration[];
+
+      if (ks === 'com.apple.fps.1_0') {
+        // FairPlay: Don't specify robustness (not supported)
+        probeConfigs = [{
+          initDataTypes: ['cenc'],
+          videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }]
+        }];
+      } else {
+        // Widevine and PlayReady: Specify robustness to avoid EME warnings
+        probeConfigs = [{
+          initDataTypes: ['cenc'],
+          videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"', robustness: 'SW_SECURE_CRYPTO' }]
+        }];
+      }
+
       return navigator.requestMediaKeySystemAccess(ks, probeConfigs).then(() => ({ available: true }));
     } catch (e: any) {
       // NotAllowedError = Permissions-Policy blocked (iframe without allow="encrypted-media")
@@ -388,22 +401,35 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       videoConfig = {
         codec: 'H264' as const,
         encryption: 'cbcs' as const,
-        robustness: 'SW' as const, // iOS FairPlay doesn't support robustness param
+        // FairPlay doesn't support robustness, but omitting it causes EME warning
+        // So we specify it even though Safari ignores it
+        robustness: 'SW_SECURE_CRYPTO' as any,
         iv  // iv is REQUIRED for FairPlay
         // Note: keyId is often omitted for FairPlay as it's extracted from SKD URL
         // Only include keyId if specifically needed for this stream
       };
-      logDebug('iOS/FairPlay detected - using iv (keyId handled by FairPlay SKD URL)');
-    } else {
-      // Other platforms (Android, Windows, Firefox, macOS Safari, etc.)
+      logDebug('iOS/FairPlay detected - using iv (keyId handled by FairPlay SKD URL) with SW_SECURE_CRYPTO robustness');
+    } else if (isAndroid && androidRobustness === 'HW') {
+      // Android with Widevine L1 hardware security
       videoConfig = {
         codec: 'H264' as const,
         encryption: 'cbcs' as const,
-        robustness: (isAndroid ? androidRobustness : 'SW') as 'HW' | 'SW',
+        robustness: 'HW_SECURE_ALL' as any,
         keyId,  // Widevine/PlayReady require explicit keyId
         iv   // iv is also used by other DRM systems
       };
-      logDebug(`${detectedPlatform} detected - using explicit keyId and iv`);
+      logDebug(`Android HW (Widevine L1) detected - using HW_SECURE_ALL robustness`);
+    } else {
+      // Other platforms (Windows, Firefox, macOS Chrome/Edge, etc.)
+      // Use software security with crypto operations for wider compatibility
+      videoConfig = {
+        codec: 'H264' as const,
+        encryption: 'cbcs' as const,
+        robustness: 'SW_SECURE_CRYPTO' as any,
+        keyId,  // Widevine/PlayReady require explicit keyId
+        iv   // iv is also used by other DRM systems
+      };
+      logDebug(`${detectedPlatform} detected - using SW_SECURE_CRYPTO robustness (software security)`);
     }
 
     // CALLBACK AUTHORIZATION MODE
