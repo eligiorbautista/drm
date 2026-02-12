@@ -126,10 +126,14 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   const [drmError, setDrmError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
+  
+  // Check if running on iOS for mobile-specific debugging
+  const isMobileIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent) || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
 
-  // In embed mode, disable all logging for security and clean output
-  const broadcastDebugEvent = isEmbedMode ? () => {} : (detail: { id: string; level: 'info' | 'error' | 'warning'; message: string }) => {
+  // Enable debug logging for all modes (needed for mobile iOS testing)
+  const broadcastDebugEvent = (detail: { id: string; level: 'info' | 'error' | 'warning'; message: string }) => {
     const event = new CustomEvent('debug-log', {
       detail: {
         ...detail,
@@ -139,23 +143,31 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     window.dispatchEvent(event);
   };
 
-  const logDebug = isEmbedMode ? () => {} : (...args: any[]) => {
+  const logDebug = (...args: any[]) => {
     console.log(...args);
     const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
     broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'info', message });
   };
 
-  const logError = isEmbedMode ? () => {} : (...args: any[]) => {
+  const logError = (...args: any[]) => {
     console.error(...args);
     const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
     broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'error', message });
   };
 
-  const logWarning = isEmbedMode ? () => {} : (...args: any[]) => {
+  const logWarning = (...args: any[]) => {
     console.warn(...args);
     const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
     broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'warning', message });
   };
+
+  // Auto-show debug panel on iOS for testing
+  useEffect(() => {
+    if (isMobileIOS && !isProduction) {
+      setShowDebugPanel(true);
+      logDebug('iOS detected - Debug panel auto-enabled for testing');
+    }
+  }, [isMobileIOS, isProduction]);
 
   useEffect(() => {
     console.log('[Player] isMuted changed to:', isMuted);
@@ -762,6 +774,33 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             }}
           />
 
+          {/* Debug Toggle - Top left corner, visible on iOS and when explicitly toggled */}
+          {(!isProduction || isMobileIOS) && (
+            <button
+              onClick={() => setShowDebugPanel(!showDebugPanel)}
+              className="fixed top-4 left-4 z-50 p-2 bg-black/60 backdrop-blur-sm text-white rounded-lg flex items-center gap-2 hover:bg-black/80 transition-colors border border-white/20"
+              title={showDebugPanel ? "Hide Debug" : "Show Debug"}
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                {showDebugPanel ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                )}
+              </svg>
+              <span className="text-xs font-medium">Debug</span>
+            </button>
+          )}
+
+          {showDebugPanel && (
+            <div 
+              className="fixed top-16 left-4 right-4 bottom-auto max-h-80 z-40 bg-black/95 backdrop-blur-md border border-white/20 rounded-lg overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DebugPanel id={DEBUG_PANEL_ID} title="Debug Log" />
+            </div>
+          )}
+
           {/* Unmute Button - Only visible when loader is gone (stream is playing)
               In embed mode, show when connected and muted regardless of isPlaying state */}
           {isMuted && (isEmbedMode ? isConnected : isPlaying) && !isConnecting && !error && !drmError && (
@@ -1001,6 +1040,33 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                   }
                 }}
               />
+
+              {/* Debug Toggle - Top right corner of video container */}
+              {(!isProduction || isMobileIOS) && (
+                <button
+                  onClick={() => setShowDebugPanel(!showDebugPanel)}
+                  className="absolute top-4 right-4 z-30 p-2 bg-black/60 backdrop-blur-sm text-white rounded-lg flex items-center gap-2 hover:bg-black/80 transition-colors border border-white/20"
+                  title={showDebugPanel ? "Hide Debug" : "Show Debug"}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    {showDebugPanel ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                    )}
+                  </svg>
+                  <span className="text-xs font-medium">Debug</span>
+                </button>
+              )}
+
+              {showDebugPanel && (
+                <div 
+                  className="absolute top-16 left-4 right-4 bottom-auto max-h-80 z-30 bg-black/95 backdrop-blur-md border border-white/20 rounded-lg overflow-hidden"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <DebugPanel id={DEBUG_PANEL_ID} title="Debug Log" />
+                </div>
+              )}
 
               {/* Error Overlay */}
               {(error || drmError) && (

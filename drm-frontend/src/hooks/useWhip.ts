@@ -55,13 +55,35 @@ export function useWhip() {
       try {
         logToDebug('info', 'Starting WHIP connection...');
         
-        // Create peer connection
-        const pc = new RTCPeerConnection({
-          iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
-          bundlePolicy: 'max-bundle',
-          // @ts-ignore - encodedInsertableStreams for DRM
-          encodedInsertableStreams: !!encrypted,
-        });
+        let pc: RTCPeerConnection;
+        
+        // Try to create RTCPeerConnection with encodedInsertableStreams
+        // Some browsers/devices don't support this feature, so we need fallback
+        try {
+          pc = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
+            bundlePolicy: 'max-bundle',
+            // @ts-ignore - encodedInsertableStreams for DRM
+            encodedInsertableStreams: !!encrypted,
+          });
+          logToDebug('info', `RTCPeerConnection created with encodedInsertableStreams=${encrypted}`);
+        } catch (insertableStreamsError: any) {
+          // Fallback: try without encodedInsertableStreams if the browser doesn't support it
+          console.warn('[WHIP] encodedInsertableStreams not supported, creating RTCPeerConnection without it:', insertableStreamsError.message);
+          logToDebug('warning', `Browser doesn't support encodedInsertableStreams, falling back to standard WebRTC`);
+          
+          if (encrypted) {
+            console.warn('[WHIP] DRM encryption requested but encodedInsertableStreams is not supported. Broadcasting may not work.');
+            logToDebug('error', '⚠️ DRM requires encodedInsertableStreams which is not supported on this device. Broadcasting may fail.');
+          }
+          
+          pc = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
+            bundlePolicy: 'max-bundle',
+          });
+          logToDebug('info', 'RTCPeerConnection created without encodedInsertableStreams');
+        }
+        
         pcRef.current = pc;
 
         // Setup connection state handlers

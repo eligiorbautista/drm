@@ -35,6 +35,22 @@ export function useWhep() {
       );
     };
 
+    // Log platform info for debugging
+    const platformInfo = {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      product: navigator.product,
+      vendor: navigator.vendor,
+      maxTouchPoints: navigator.maxTouchPoints,
+      isIOS: /iPad|iPhone|iPod/i.test(navigator.userAgent) || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1),
+      isAndroid: /Android/i.test(navigator.userAgent),
+      isSafari: /Safari/i.test(navigator.userAgent) && !/Chrome|CriOS|FxiOS/i.test(navigator.userAgent),
+      encodedInsertableStreamsSupported: 'RTCRtpScriptTransform' in window || 'RTCEncodedVideoFrame' in window
+    };
+    console.log('[WHEP connect] Platform info:', platformInfo);
+    logToDebug('info', `Platform: ${platformInfo.platform}, iOS: ${platformInfo.isIOS}, Android: ${platformInfo.isAndroid}, Safari: ${platformInfo.isSafari}`);
+    logToDebug('info', `Encoded Insertable Streams supported: ${platformInfo.encodedInsertableStreamsSupported}`);
+
     disconnect();
     setError(null);
     setIsConnecting(true);
@@ -57,15 +73,40 @@ export function useWhep() {
     try {
       logToDebug('info', 'Starting WHEP connection...');
       
-      const pc = new RTCPeerConnection({
-        bundlePolicy: 'max-bundle',
-        iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
-        // @ts-ignore
-        encodedInsertableStreams: encrypted,
-        // Optimize for ultra-low latency
-        // @ts-ignore - iceTransportPolicy is valid
-        iceTransportPolicy: 'all'
-      });
+      let pc: RTCPeerConnection;
+      
+      // Try to create RTCPeerConnection with encodedInsertableStreams
+      // Some browsers/devices don't support this feature, so we need fallback
+      try {
+        pc = new RTCPeerConnection({
+          bundlePolicy: 'max-bundle',
+          iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
+          // @ts-ignore - encodedInsertableStreams is not in TypeScript lib but is valid in modern browsers
+          encodedInsertableStreams: encrypted,
+          // Optimize for ultra-low latency
+          // @ts-ignore - iceTransportPolicy is valid
+          iceTransportPolicy: 'all'
+        });
+        logToDebug('info', `RTCPeerConnection created with encodedInsertableStreams=${encrypted}`);
+      } catch (insertableStreamsError: any) {
+        // Fallback: try without encodedInsertableStreams if the browser doesn't support it
+        console.warn('[WHEP] encodedInsertableStreams not supported, creating RTCPeerConnection without it:', insertableStreamsError.message);
+        logToDebug('warning', `Browser doesn't support encodedInsertableStreams, falling back to standard WebRTC`);
+        
+        if (encrypted) {
+          console.warn('[WHEP] DRM encryption requested but encodedInsertableStreams is not supported. Playback may not work.');
+          logToDebug('error', '⚠️ DRM requires encodedInsertableStreams which is not supported on this device. Playback may fail.');
+        }
+        
+        pc = new RTCPeerConnection({
+          bundlePolicy: 'max-bundle',
+          iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
+          // @ts-ignore - iceTransportPolicy is valid
+          iceTransportPolicy: 'all'
+        });
+        logToDebug('info', 'RTCPeerConnection created without encodedInsertableStreams');
+      }
+      
       pcRef.current = pc;
 
       // Optimize transceivers for low-latency streaming
@@ -222,8 +263,27 @@ export function useWhep() {
 
     } catch (error: any) {
       console.error('WHEP connection error:', error);
-      logToDebug('error', `Connection error: ${error.message || 'Connection failed'}`);
-      setError(error.message || 'Connection failed');
+      
+      // Provide more helpful error messages
+      let errorMessage = error.message || 'Connection failed';
+      
+      // Check if it's an encodedInsertableStreams error
+      if (errorMessage.includes('Unsupported keySystem') || errorMessage.includes('supportedConfigurations')) {
+        errorMessage = 'DRM not supported on this device. Try with encryption disabled or use a different browser/device.';
+        logToDebug('error', '⚠️ This device does not support required DRM features (encodedInsertableStreams)');
+      }
+      // Check if it's an encrypted media error
+      else if (errorMessage.includes('encrypted-media') || errorMessage.includes('EME') || errorMessage.includes('media key system')) {
+        errorMessage = 'DRM initialization failed. Ensure you are using HTTPS and try again.';
+        logToDebug('error', '⚠️ DRM initialization error - check HTTPS and browser compatibility');
+      }
+      // Check if it's a network error
+      else if (error.name === 'AbortError') {
+        errorMessage = 'Connection timed out. Check your network connection.';
+      }
+      
+      logToDebug('error', `Connection error: ${errorMessage}`);
+      setError(errorMessage);
       setIsConnecting(false);
       disconnect(false);
     }
