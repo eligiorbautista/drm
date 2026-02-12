@@ -4,6 +4,7 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { ViewerPage } from './pages/ViewerPage'
 import { BroadcasterPage } from './pages/BroadcasterPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { EmbedPage } from './pages/EmbedPage'
 import { AuthProvider } from './context/AuthContext'
 import { useAuth } from './context/AuthContext'
 import './App.css'
@@ -143,22 +144,22 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   {
-    path: '/viewer',
-    label: 'Viewer',
-    description: 'Watch DRM-protected streams',
-    icon: (
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    )
-  },
-  {
     path: '/broadcaster',
     label: 'Broadcaster',
     description: 'Start your live broadcast',
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+      </svg>
+    )
+  },
+  {
+    path: '/viewer',
+    label: 'Viewer',
+    description: 'Watch DRM-protected streams',
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     )
   }
@@ -218,7 +219,7 @@ function AppNavigation() {
             </button>
 
             {/* Logo & Brand */}
-            <Link to="/viewer" className="flex items-center gap-3 group">
+            <Link to="/broadcaster" className="flex items-center gap-3 group">
               <div className="hidden sm:block">
                 <h1 className="text-lg font-bold text-white group-hover:text-white transition-colors">DRM Media Platform</h1>
                 <p className="text-xs text-[#888888]">Security beyond delivery</p>
@@ -352,6 +353,18 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
 export default function App() {
   const location = useLocation();
 
+  // Handle embed page - full screen, no navigation, minimal chrome
+  // Supports encrypted=true or encrypted=false query params
+  if (location.pathname === '/embed') {
+    return (
+      <AuthProvider>
+        <EncryptionProvider>
+          <EmbedPage />
+        </EncryptionProvider>
+      </AuthProvider>
+    );
+  }
+
   // Check if we're on the auth/login page
   const isAuthPage = location.pathname === '/';
 
@@ -390,7 +403,15 @@ export default function App() {
                   path="/"
                   element={
                     <ProtectedRoute requireAuth={false}>
-                      <ViewerPage />
+                      <BroadcasterPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/broadcaster"
+                  element={
+                    <ProtectedRoute>
+                      <BroadcasterPage />
                     </ProtectedRoute>
                   }
                 />

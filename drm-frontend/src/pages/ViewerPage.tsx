@@ -15,8 +15,22 @@ export function ViewerPage({ isEmbedMode }: { isEmbedMode?: boolean } = {}) {
   console.log('[ViewerPage] Config:', {
     baseSetting: encryptedFromSettings,
     encryptionLoading,
-    encryptionError
+    encryptionError,
+    isEmbedMode
   });
+
+  // In embed mode, render just the player without wrapper for full viewport
+  if (isEmbedMode) {
+    return (
+      <Player
+        endpoint={whepEndpoint}
+        merchant={merchant}
+        userId="elidev-test"
+        encrypted={encryptedFromSettings}
+        isEmbedMode={isEmbedMode}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4 sm:space-y-6 lg:space-y-8">
