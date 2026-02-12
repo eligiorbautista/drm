@@ -28,29 +28,69 @@ function checkEmeAvailability(logDebug: (msg: string) => void): Promise<{ availa
   }
 
   // Probe EME with a minimal config to verify the permission is delegated
-  // Support both Widevine and FairPlay (Safari) key systems
+  // Platform detection for DRM scheme selection
   const uaHasIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent) || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
-  // IMPORTANT: Chrome on iOS (CriOS) uses Safari's WebKit engine and only supports FairPlay, NOT Widevine
-  // So we treat ALL iOS browsers as FairPlay users
+  const uaHasAndroid = /Android/i.test(navigator.userAgent);
+  const uaHasSafari = /Safari/i.test(navigator.userAgent);
   
-  const probeConfigs: MediaKeySystemConfiguration[] = uaHasIOS ? [{
-    // FairPlay config for ALL iOS browsers (Safari, Chrome, Firefox on iOS)
-    initDataTypes: ['cenc', 'cbcs', 'sinf', 'webm'],
-    videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }],
-    audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }]
-  }] : [{
-    // Widevine config for Chrome/Edge/Android/PlayReady
-    initDataTypes: ['cenc'],
-    videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"', robustness: '' }]
-  }];
-
-  // Try Widevine first (Chrome/Edge/Android), then FairPlay (Safari/iOS), then PlayReady (Edge)
-  // FairPlay key system: 'com.apple.fps.1_0' (Safari 10+) or 'com.apple.fps' (Safari 11+)
-  const keySystems = ['com.widevine.alpha', 'com.apple.fps.1_0', 'com.apple.fps', 'com.microsoft.playready.recommendation'];
+  // IMPORTANT: iOS devices (including Safari, Chrome, Firefox) ONLY support FairPlay
+  // They do NOT support Widevine at all
+  const isIOS = uaHasIOS;
+  const isAndroid = uaHasAndroid;
+  
+  // Select probe config and key systems based on platform
+  let probeConfigs: MediaKeySystemConfiguration[];
+  let keySystems: string[];
+  
+  if (isIOS) {
+    // iOS: ONLY FairPlay!
+    probeConfigs = [{
+      // FairPlay config for ALL iOS browsers (Safari, Chrome, Firefox on iOS)
+      initDataTypes: ['cenc', 'cbcs', 'sinf', 'webm'],
+      videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }],
+      audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }]
+    }];
+    // Try FairPlay only (Safari 10+: com.apple.fps.1_0, Safari 11+: com.apple.fps)
+    keySystems = ['com.apple.fps.1_0', 'com.apple.fps'];
+    logDebug('iOS detected - will ONLY try FairPlay key systems');
+  } else if (isAndroid) {
+    // Android: Widevine L1/L3
+    probeConfigs = [{
+      initDataTypes: ['cenc'],
+      videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"', robustness: '' }]
+    }];
+    keySystems = ['com.widevine.alpha', 'com.microsoft.playready.recommendation'];
+    logDebug('Android detected - will try Widevine first, then PlayReady');
+  } else {
+    // Desktop (Windows/macOS/Linux): Widevine then PlayReady
+    // macOS Safari may also support FairPlay
+    if (uaHasSafari) {
+      // Safari on macOS: Try FairPlay first, then Widevine
+      probeConfigs = [{
+        initDataTypes: ['cenc', 'cbcs', 'sinf', 'webm'],
+        videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }],
+        audioCapabilities: [{ contentType: 'audio/mp4; codecs="mp4a.40.2"' }]
+      }];
+      keySystems = ['com.apple.fps.1_0', 'com.apple.fps', 'com.widevine.alpha', 'com.microsoft.playready.recommendation'];
+      logDebug('Safari on macOS detected - will try FairPlay first, then Widevine');
+    } else {
+      // Chrome/Edge on Windows/Linux: Widevine then PlayReady
+      probeConfigs = [{
+        initDataTypes: ['cenc'],
+        videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"', robustness: '' }]
+      }];
+      keySystems = ['com.widevine.alpha', 'com.microsoft.playready.recommendation'];
+      logDebug('Desktop detected (Chrome/Edge) - will try Widevine first, then PlayReady');
+    }
+  }
 
   for (const ks of keySystems) {
     try {
-      return navigator.requestMediaKeySystemAccess(ks, probeConfigs).then(() => ({ available: true }));
+      logDebug(`Trying key system: ${ks}`);
+      return navigator.requestMediaKeySystemAccess(ks, probeConfigs).then(() => {
+        logDebug(`✓ Key system ${ks} is available`);
+        return { available: true };
+      });
     } catch (e: any) {
       // NotAllowedError = Permissions-Policy blocked (iframe without allow="encrypted-media")
       if (e.name === 'NotAllowedError') {
@@ -375,9 +415,32 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     // Windows detection (for non-Firefox browsers)
     const isWindows = !isFirefox && (/windows/i.test(platform) || /Win/i.test(navigator.userAgent));
     
-    const detectedPlatform = isIOS ? 'iOS' : isAndroid ? 'Android' : isWindows ? 'Windows' : isFirefox ? 'Firefox' : (platform || 'Unknown');
+    let detectedPlatform: string;
+    let drmScheme: string;
+    
+    if (isIOS) {
+      detectedPlatform = 'iOS';
+      drmScheme = 'FAIRPLAY (com.apple.fps)';
+    } else if (isAndroid) {
+      detectedPlatform = 'Android';
+      drmScheme = 'WIDEVINE_MODULAR (com.widevine.alpha)';
+    } else if (isWindows) {
+      detectedPlatform = 'Windows';
+      drmScheme = 'WIDEVINE_MODULAR or PLAYREADY';
+    } else if (isFirefox) {
+      detectedPlatform = 'Firefox (Linux/Other)';
+      drmScheme = 'WIDEVINE_MODULAR (com.widevine.alpha)';
+    } else if (isSafari && !isIOS) {
+      detectedPlatform = 'macOS Safari';
+      drmScheme = 'FAIRPLAY or WIDEVINE_MODULAR';
+    } else {
+      detectedPlatform = platform || 'Unknown';
+      drmScheme = 'WIDEVINE_MODULAR (com.widevine.alpha)';
+    }
+    
     logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, ios=${isIOS}, safari=${isSafari}, isAndroid=${isAndroid}, isFirefox=${isFirefox}, uaHasMobile=${uaHasMobile}`);
     logDebug(`Detected platform: ${detectedPlatform}`);
+    logDebug(`Will use DRM scheme: ${drmScheme}`);
 
     const params = new URLSearchParams(window.location.search);
     const robustnessOverride = params.get('robustness')?.toUpperCase();
@@ -530,10 +593,21 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       }
     });
 
-    logDebug(`DRM config: isAndroid=${isAndroid}, encryption=${video.encryption}, robustness=${video.robustness}, mediaBufferMs=${mediaBufferMs}`);
-    logDebug(`[Callback Auth] Merchant: ${merchant || import.meta.env.VITE_DRM_MERCHANT}, KeyId: ${import.meta.env.VITE_DRM_KEY_ID}`);
-    logDebug(`[Callback Auth] DRMtoday will call your backend at: ${import.meta.env.VITE_DRM_BACKEND_URL}/api/callback`);
-    logDebug(`[Callback Auth] UserId: ${userId || 'elidev-test'}`);
+    logDebug(`╔════════════════════════════════════════════════════════════════════════════════╗`);
+    logDebug(`║ DRM CONFIGURATION                                                            ║`);
+    logDebug(`╠════════════════════════════════════════════════════════════════════════════════╣`);
+    logDebug(`║ Platform:         ${detectedPlatform.padEnd(35)} ║`);
+    logDebug(`║ DRM Scheme:       ${drmScheme.padEnd(35)} ║`);
+    logDebug(`║ Audio Codec:      ${(isIOS ? 'mp4a.40.2 (AAC)' : 'opus').padEnd(35)} ║`);
+    logDebug(`║ Video Codec:      ${video.codec.padEnd(35)} ║`);
+    logDebug(`║ Encryption:       ${video.encryption.padEnd(35)} ║`);
+    logDebug(`║ Robustness:       ${String(video.robustness || 'N/A').padEnd(35)} ║`);
+    logDebug(`║ Media Buffer:     ${mediaBufferMs + 'ms'.padEnd(35)} ║`);
+    logDebug(`╠════════════════════════════════════════════════════════════════════════════════╣`);
+    logDebug(`║ Merchant:         ${(merchant || import.meta.env.VITE_DRM_MERCHANT).padEnd(35)} ║`);
+    logDebug(`║ Callback URL:     ${(import.meta.env.VITE_DRM_BACKEND_URL + '/api/callback')}`);
+    logDebug(`║ User ID:          ${(userId || 'elidev-test').padEnd(35)} ║`);
+    logDebug(`╚════════════════════════════════════════════════════════════════════════════════╝`);
 
     try {
       rtcDrmConfigure(drmConfig);

@@ -26,7 +26,7 @@ const { DRM_SCHEMES } = require('../utils/constants');
  * @param {object} [options.outputProtection] - Output protection settings
  * @param {boolean} [options.outputProtection.digital=true] - Digital output protection
  * @param {boolean} [options.outputProtection.analogue=true] - Analogue output protection
- * @param {boolean} [options.outputProtection.enforce=false] - Enforce output protection
+ * @param {boolean} [options.outputProtection.enforce=true] - Enforce output protection
  * @returns {object} Customer Rights Token
  */
 function buildPurchaseCrt(assetId, options = {}) {
@@ -147,7 +147,7 @@ function buildCrtWithOverrides(assetId, baseCrt, overrides = []) {
  * @param {string} [options.licenseType='purchase'] - 'purchase' or 'rental'
  * @param {string} [options.relativeExpiration] - For rental: license validity duration
  * @param {string} [options.playDuration] - For rental: playback window duration
- * @param {boolean} [options.enforce=false] - Enforce output protection
+ * @param {boolean} [options.enforce=true] - Enforce output protection
  * @returns {object} CRT response for DRMtoday
  */
 function buildCallbackResponse(callbackPayload, options = {}) {
@@ -238,7 +238,7 @@ function buildSessionId(crt) {
  * @param {string} [params.licenseType='purchase'] - 'purchase' or 'rental'
  * @param {string} [params.relativeExpiration='PT24H'] - For rental
  * @param {string} [params.playDuration='PT4H'] - For rental
- * @param {boolean} [params.enforce=false] - Output protection enforcement
+ * @param {boolean} [params.enforce=true] - Output protection enforcement
  * @param {boolean} [params.storeLicense=true] - Persist license
  * @returns {object} CRT object for token payload
  */
