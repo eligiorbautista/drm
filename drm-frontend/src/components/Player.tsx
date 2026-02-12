@@ -386,6 +386,22 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     const keyId = hexToUint8Array(import.meta.env.VITE_DRM_KEY_ID);
     const iv = hexToUint8Array(import.meta.env.VITE_DRM_IV);
 
+    // Validate IV and KeyId for FairPlay (iOS)
+    // FairPlay requires 16-byte (128-bit) IV and KeyId
+    if (keyId.length !== 16) {
+      const err = `Invalid KeyId length: ${keyId.length} bytes. Expected 16 bytes (128-bit) for FairPlay.`;
+      logError(err);
+      throw new Error(err);
+    }
+    if (iv.length !== 16) {
+      const err = `Invalid IV length: ${iv.length} bytes. Expected 16 bytes (128-bit) for FairPlay.`;
+      logError(err);
+      throw new Error(err);
+    }
+    
+    logDebug(`✓ IV validation: ${iv.length} bytes (valid for FairPlay)`);
+    logDebug(`✓ KeyId validation: ${keyId.length} bytes (valid for FairPlay)`);
+
     // Platform detection (same as whep)
     const uad = (navigator as any).userAgentData;
     const platform = uad?.platform || navigator.platform || '';
@@ -515,10 +531,24 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     // FairPlay on iOS doesn't support 'robustness' property like Widevine
     // Desktop Safari on macOS may support Widevine as well
     const robustness = isIOS ? undefined : (isAndroid ? androidRobustness : 'SW' as 'HW' | 'SW');
+    
+    const encryptionType = 'cbcs' as const; // Same for all platforms
+
+    // IMPORTANT: FairPlay on iOS REQUIRES the IV (initialization vector)
+    // The IV must be 16 bytes and should match what the broadcaster is using
+    logDebug(`Initializing DRM configuration with IV: ${Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('')}`);
+    logDebug(`KeyId: ${Array.from(keyId).map(b => b.toString(16).padStart(2, '0')).join('')}`);
+    
+    if (isIOS) {
+      logDebug(`✓ FairPlay on iOS: IV is REQUIRED and will be used for decryption`);
+      logDebug(`✓ FairPlay on iOS: Using ${encryptionType} encryption scheme`);
+    } else {
+      logDebug(`✓ Non-iOS platform: IV will be used with ${encryptionType} encryption`);
+    }
 
     const video = {
       codec: 'H264' as const,
-      encryption: 'cbcs' as const,
+      encryption: encryptionType,
       robustness: robustness as 'HW' | 'SW' | undefined,
       keyId,
       iv
@@ -593,6 +623,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       }
     });
 
+    const keyIdHex = Array.from(keyId).map(b => b.toString(16).padStart(2, '0')).join('');
+    const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('');
+    
     logDebug(`╔════════════════════════════════════════════════════════════════════════════════╗`);
     logDebug(`║ DRM CONFIGURATION                                                            ║`);
     logDebug(`╠════════════════════════════════════════════════════════════════════════════════╣`);
@@ -603,6 +636,16 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     logDebug(`║ Encryption:       ${video.encryption.padEnd(35)} ║`);
     logDebug(`║ Robustness:       ${String(video.robustness || 'N/A').padEnd(35)} ║`);
     logDebug(`║ Media Buffer:     ${mediaBufferMs + 'ms'.padEnd(35)} ║`);
+    logDebug(`╠════════════════════════════════════════════════════════════════════════════════╣`);
+    if (isIOS) {
+      logDebug(`║ ★ IV (REQUIRED):   ${ivHex.padEnd(35)} ║`);
+      logDebug(`║ ★ KeyId:          ${keyIdHex.padEnd(35)} ║`);
+      logDebug(`║                                                                               ║`);
+      logDebug(`║ ✅ FairPlay on iOS REQUIRES IV for decryption                              ║`);
+    } else {
+      logDebug(`║ IV:               ${ivHex.padEnd(35)} ║`);
+      logDebug(`║ KeyId:            ${keyIdHex.padEnd(35)} ║`);
+    }
     logDebug(`╠════════════════════════════════════════════════════════════════════════════════╣`);
     logDebug(`║ Merchant:         ${(merchant || import.meta.env.VITE_DRM_MERCHANT).padEnd(35)} ║`);
     logDebug(`║ Callback URL:     ${(import.meta.env.VITE_DRM_BACKEND_URL + '/api/callback')}`);
