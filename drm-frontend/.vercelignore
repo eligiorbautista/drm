@@ -1,0 +1,14 @@
+# Vercel ignore patterns
+node_modules/
+dist/
+.git/
+.env
+.env.local
+.env.*.local
+*.test.ts
+*.test.tsx
+vitest.config.ts
+vitest/
+public/crypto/
+test/
+docs/
