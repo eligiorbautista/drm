@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Player } from '../components/Player';
+import { EmbedPlayer } from '../components/EmbedPlayer';
 import { useEncryption } from '../App';
 
 interface ViewerPageProps {
@@ -28,39 +29,37 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
   
   // Get current endpoint from state (either initial or user-modified)
-  const getEmbedUrl = () => {
-    return `${window.location.origin}/embed?encrypted=${encryptedFromSettings}`;
+  const getWatchUrl = () => {
+    const endpointParam = encodeURIComponent(whepEndpoint);
+    return `${window.location.origin}/watch?endpoint=${endpointParam}`;
   };
 
-  const openEmbedPlayer = () => {
-    const embedUrl = getEmbedUrl();
-    window.open(embedUrl, 'EmbedPlayer', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes');
+  const openWatchPlayer = () => {
+    const watchUrl = getWatchUrl();
+    window.open(watchUrl, 'WatchPlayer', 'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes');
   };
 
-  console.log('[ViewerPage] Encryption config:', {
+  console.log('[ViewerPage] Config:', {
     isEmbedMode,
     encryptedParam,
     baseSetting: encryptedFromSettings,
     encryptionLoading,
     encryptionError,
     shouldUseEncryption,
-    embedUrl: getEmbedUrl()
+    watchUrl: getWatchUrl()
   });
 
   // Auto-set fullscreen for embed mode
   const showFullscreen = isEmbedMode;
 
   if (showFullscreen) {
-    // In embed mode, get encryption from URL param, but use defaults for endpoint/merchant
-    console.log('[ViewerPage] Embed mode - shouldUseEncryption:', shouldUseEncryption, 'from URL param');
+    // In embed mode, use the simplified EmbedPlayer without DRM
+    // The embed player is designed for clean iframe embedding
+    console.log('[ViewerPage] Embed mode - using EmbedPlayer (no DRM)');
     return (
       <div className="min-h-screen bg-black m-0 p-0">
-        <Player
+        <EmbedPlayer
           endpoint={whepEndpoint}
-          merchant={merchant}
-          userId="elidev-test"
-          encrypted={shouldUseEncryption}
-          isEmbedMode={true}
         />
       </div>
     );
@@ -73,7 +72,7 @@ export function ViewerPage({ isEmbedMode = false }: ViewerPageProps) {
         merchant={merchant}
         userId="elidev-test"
         encrypted={shouldUseEncryption}
-        onOpenEmbed={openEmbedPlayer}
+        onOpenEmbed={openWatchPlayer}
       />
 
       {/* Settings Panel - Hidden in production */}

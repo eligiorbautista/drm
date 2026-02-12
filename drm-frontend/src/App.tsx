@@ -2,6 +2,7 @@ import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
 import { AuthPage } from './components/Auth'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { ViewerPage } from './pages/ViewerPage'
+import { EmbedPage } from './pages/EmbedPage'
 import { BroadcasterPage } from './pages/BroadcasterPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { AuthProvider } from './context/AuthContext'
@@ -400,6 +401,14 @@ export default function App() {
                   element={
                     <ProtectedRoute requireAuth={false} allowRedirect={false}>
                       <ViewerPage isEmbedMode={true} />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/watch"
+                  element={
+                    <ProtectedRoute requireAuth={false}>
+                      <EmbedPage />
                     </ProtectedRoute>
                   }
                 />

@@ -195,6 +195,18 @@ export function useDrm() {
       mediaBufferMs
     };
 
+    // Add DRM type based on platform for proper license request handling
+    // This is especially important for Callback Authorization
+    if (isAndroid) {
+      config.type = 'Widevine' as const;
+      logDebug('Setting DRM type to Widevine for Android');
+    } else if (isFirefox) {
+      // Firefox supports Widevine
+      config.type = 'Widevine' as const;
+      logDebug('Setting DRM type to Widevine for Firefox');
+    }
+    // Note: iOS/FairPlay detection should be added here if needed
+
     logDebug(`DRM config: isAndroid=${isAndroid}, encryption=${encryptionMode}, robustness=${videoConfig.robustness}, mediaBufferMs=${mediaBufferMs}`);
     logDebug(`[Callback Auth] Merchant: ${merchantId}`);
     logDebug(`[Callback Auth] DRMtoday License Server: ${env.baseUrl()}`);
