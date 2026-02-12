@@ -414,34 +414,65 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     logDebug(`✓ IV validation: ${iv.length} bytes (valid for FairPlay)`);
     logDebug(`✓ KeyId validation: ${keyId.length} bytes (valid for FairPlay)`);
 
-    // Platform detection (same as whep)
+    // Platform detection (same as whep) - FIXED for proper Windows detection
     const uad = (navigator as any).userAgentData;
     const platform = uad?.platform || navigator.platform || '';
+    const userAgent = navigator.userAgent;
     const isMobile = uad?.mobile === true;
     
-    // Firefox reports all devices as "Linux" for privacy, so we need to detect it via userAgent
-    // and also check for Android in userAgent before checking platform
-    const uaHasAndroid = /Android/i.test(navigator.userAgent);
-    const uaHasFirefox = /Firefox/i.test(navigator.userAgent);
-    const uaHasMobile = /Mobile|Tablet/i.test(navigator.userAgent);
-    const uaHasIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent) || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
-    // NOTE: Chrome on iOS (CriOS) uses Safari's WebKit engine and only supports FairPlay
-    const uaHasSafari = /Safari/i.test(navigator.userAgent);
+    // iOS Detection
+    // iOS devices (including iPad, iPhone, iPod) - check both userAgent and platform
+    // Also detect iPadOS (iPad on Mac platform with touch points)
+    const uaHasIOS = /iPad|iPhone|iPod/i.test(userAgent) || 
+                     (/MacIntel/.test(platform) && navigator.maxTouchPoints > 1) ||
+                     (/Mac/.test(platform) && navigator.maxTouchPoints > 1);
     
-    // Android detection: prioritize userAgent over platform (Firefox/Chrome on Android)
-    const isAndroid = uaHasAndroid || 
-                      platform.toLowerCase() === 'android' ||
-                      (isMobile && /linux/i.test(platform));
+    // Android Detection
+    // Android can be detected via userAgent (most reliable)
+    // userAgentData.platform might be "" or "Android" depending on browser
+    const uaHasAndroid = /Android/i.test(userAgent) || /Linux/i.test(userAgent) && /Mobile/i.test(userAgent);
+    const platformHasAndroid = platform.toLowerCase().includes('android');
+    const isAndroid = uaHasAndroid || platformHasAndroid || (isMobile && /Linux/i.test(platform));
+    
+    // Windows Detection - FIXED
+    // navigator.platform on Windows returns "Win32" (not "Windows")
+    // Also check userAgent for Windows patterns
+    const platformHasWindows = /Win32/i.test(platform) || /Win64/i.test(platform) || /Windows/i.test(platform);
+    const uaHasWindows = /Windows/i.test(userAgent) || /Win/i.test(userAgent) || /NT/i.test(userAgent);
+    const isWindows = platformHasWindows || uaHasWindows;
+    
+    // macOS Detection (desktop only, not iOS/iPadOS)
+    const isMacOS = /Mac/i.test(platform) && !uaHasIOS;
+    
+    // Linux Detection (desktop, not Android)
+    const platformHasLinux = /Linux/i.test(platform) || /X11/i.test(platform);
+    const uaHasLinux = /Linux/i.test(userAgent) && !uaHasAndroid;
+    const isLinux = (platformHasLinux || uaHasLinux) && !isAndroid;
+    
+    // Firefox Detection
+    const uaHasFirefox = /Firefox/i.test(userAgent);
+    const isFirefox = uaHasFirefox;
+    
+    // Safari Detection (desktop macOS only)
+    // Note: iOS Safari is covered by uaHasiOS
+    const uaHasSafari = /Safari/i.test(userAgent) && !/Chrome|CriOS|FxiOS|EdgiOS/i.test(userAgent);
+    const isSafari = uaHasSafari && !uaHasIOS;
+    
+    // Edge Detection
+    const uaHasEdge = /Edge/i.test(userAgent) || /Edg/i.test(userAgent);
+    const isEdge = uaHasEdge && !isFirefox;
     
     // iOS detection - ALL iOS browsers (including Chrome/CriOS) use FairPlay only
     const isIOS = uaHasIOS;
-    const isSafari = uaHasSafari; // Only used for desktop Safari on macOS
     
-    // Firefox detection: check userAgent (works cross-platform)
-    const isFirefox = uaHasFirefox;
-    
-    // Windows detection (for non-Firefox browsers)
-    const isWindows = !isFirefox && (/windows/i.test(platform) || /Win/i.test(navigator.userAgent));
+    // Debug: Log all detection values
+    logDebug(`Platform Detection Debug:`);
+    logDebug(`  navigator.platform: ${platform}`);
+    logDebug(`  navigator.userAgent: ${userAgent.substring(0, 100)}...`);
+    logDebug(`  navigator.userAgentData.platform: ${uad?.platform || 'N/A'}`);
+    logDebug(`  navigator.userAgentData.mobile: ${uad?.mobile || 'N/A'}`);
+    logDebug(`  Detected - iOS: ${isIOS}, Android: ${isAndroid}, Windows: ${isWindows}, macOS: ${isMacOS}, Linux: ${isLinux}`);
+    logDebug(`  Detected - Firefox: ${isFirefox}, Safari: ${isSafari}, Edge: ${isEdge}, Mobile: ${isMobile}`);
     
     let detectedPlatform: string;
     let drmScheme: string;
@@ -454,19 +485,31 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       drmScheme = 'WIDEVINE_MODULAR (com.widevine.alpha)';
     } else if (isWindows) {
       detectedPlatform = 'Windows';
-      drmScheme = 'WIDEVINE_MODULAR or PLAYREADY';
-    } else if (isFirefox) {
-      detectedPlatform = 'Firefox (Linux/Other)';
+      if (isEdge) {
+        detectedPlatform = 'Windows Edge';
+        drmScheme = 'PLAYREADY (com.microsoft.playready) - supports both PlayReady and Widevine';
+      } else {
+        detectedPlatform = 'Windows';
+        drmScheme = 'WIDEVINE_MODULAR (com.widevine.alpha)';
+      }
+    } else if (isMacOS) {
+      if (isSafari) {
+        detectedPlatform = 'macOS Safari';
+        drmScheme = 'FAIRPLAY or WIDEVINE_MODULAR (Safari supports FairPlay)';
+      } else {
+        detectedPlatform = 'macOS Chrome';
+        drmScheme = 'WIDEVINE_MODULAR (com.widevine.alpha)';
+      }
+    } else if (isLinux) {
+      detectedPlatform = 'Linux';
       drmScheme = 'WIDEVINE_MODULAR (com.widevine.alpha)';
-    } else if (isSafari && !isIOS) {
-      detectedPlatform = 'macOS Safari';
-      drmScheme = 'FAIRPLAY or WIDEVINE_MODULAR';
     } else {
       detectedPlatform = platform || 'Unknown';
       drmScheme = 'WIDEVINE_MODULAR (com.widevine.alpha)';
+      logDebug(`⚠ Unknown platform, defaulting to Widevine`);
     }
     
-    logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, ios=${isIOS}, safari=${isSafari}, isAndroid=${isAndroid}, isFirefox=${isFirefox}, uaHasMobile=${uaHasMobile}`);
+    logDebug(`Platform detection: platform="${platform}", detectedPlatform="${detectedPlatform}"`);
     logDebug(`Detected platform: ${detectedPlatform}`);
     logDebug(`Will use DRM scheme: ${drmScheme}`);
 
@@ -542,20 +585,52 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
 
     // FairPlay on iOS doesn't support 'robustness' property like Widevine
     // Desktop Safari on macOS may support Widevine as well
-    const robustness = isIOS ? undefined : (isAndroid ? androidRobustness : 'SW' as 'HW' | 'SW');
+    let robustness: 'HW' | 'SW' | undefined;
+    
+    if (isIOS) {
+      // iOS FairPlay: robustness is not supported, set to undefined
+      robustness = undefined;
+      logDebug(`FairPlay robustness: Not supported (will be ignored on iOS)`);
+    } else if (isAndroid) {
+      // Android Widevine: use detected robustness (HW for L1, SW for L3)
+      robustness = androidRobustness as 'HW' | 'SW';
+      logDebug(`Widevine robustness (Android): ${robustness}`);
+    } else if (isWindows && isEdge) {
+      // Windows Edge PlayReady: can use HW or SW
+      // Default to SW for compatibility
+      robustness = 'SW' as 'HW' | 'SW';
+      logDebug(`PlayReady robustness (Windows Edge): SW`);
+    } else if (isWindows) {
+      // Windows Chrome Widevine: SW (L3) is most common
+      robustness = 'SW' as 'HW' | 'SW';
+      logDebug(`Widevine robustness (Windows): SW`);
+    } else if (isFirefox) {
+      // Firefox Widevine: only SW available
+      robustness = 'SW' as 'HW' | 'SW';
+      logDebug(`Widevine robustness (Firefox): SW`);
+    } else {
+      // Default to SW for other platforms
+      robustness = 'SW' as 'HW' | 'SW';
+      logDebug(`Widevine robustness (Default): SW`);
+    }
     
     const encryptionType = 'cbcs' as const; // Same for all platforms
 
-    // IMPORTANT: FairPlay on iOS REQUIRES the IV (initialization vector)
-    // The IV must be 16 bytes and should match what the broadcaster is using
-    logDebug(`Initializing DRM configuration with IV: ${Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('')}`);
-    logDebug(`KeyId: ${Array.from(keyId).map(b => b.toString(16).padStart(2, '0')).join('')}`);
+    // IMPORTANT: IV (initialization vector) is REQUIRED for 'cbcs' encryption on ALL platforms
+    // KeyId is also REQUIRED for all platforms
+    // These must match what the broadcaster/sender is using
+    const keyIdHex = Array.from(keyId).map(b => b.toString(16).padStart(2, '0')).join('');
+    const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    logDebug(`Initializing DRM configuration:`);
+    logDebug(`  IV (16 bytes): ${ivHex} - REQUIRED for cbcs encryption`);
+    logDebug(`  KeyId (16 bytes): ${keyIdHex} - REQUIRED for all platforms`);
+    logDebug(`  Encryption Mode: ${encryptionType}`);
     
     if (isIOS) {
-      logDebug(`✓ FairPlay on iOS: IV is REQUIRED and will be used for decryption`);
-      logDebug(`✓ FairPlay on iOS: Using ${encryptionType} encryption scheme`);
+      logDebug(`  ★ FairPlay on iOS: IV and KeyId are CRITICAL for decryption`);
     } else {
-      logDebug(`✓ Non-iOS platform: IV will be used with ${encryptionType} encryption`);
+      logDebug(`  ✓ Non-iOS platform: IV and KeyId REQUIRED for cbcs encryption`);
     }
 
     const video = {
@@ -635,9 +710,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       }
     });
 
-    const keyIdHex = Array.from(keyId).map(b => b.toString(16).padStart(2, '0')).join('');
-    const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join('');
-    
     logDebug(`╔════════════════════════════════════════════════════════════════════════════════╗`);
     logDebug(`║ DRM CONFIGURATION                                                            ║`);
     logDebug(`╠════════════════════════════════════════════════════════════════════════════════╣`);
