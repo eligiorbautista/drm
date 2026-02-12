@@ -54,10 +54,18 @@ const DEFAULT_SETTINGS = {
   },
   'drm.outputProtection.enforce': {
     key: 'drm.outputProtection.enforce',
-    value: 'false',
+    value: 'true',
     valueType: 'BOOLEAN',
     category: 'drm',
-    description: 'Enforce output protection',
+    description: 'Enforce output protection (auto-disabled for L3/SW DRM)',
+    isPublic: false,
+  },
+  'drm.outputProtection.requireHDCP': {
+    key: 'drm.outputProtection.requireHDCP',
+    value: 'HDCP_V2',
+    valueType: 'STRING',
+    category: 'drm',
+    description: 'Required HDCP version: HDCP_NONE, HDCP_V1, or HDCP_V2. Auto-adjusted based on security level.',
     isPublic: false,
   },
   'stream.whip.endpoint': {

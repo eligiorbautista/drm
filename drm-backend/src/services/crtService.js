@@ -36,6 +36,7 @@ function buildPurchaseCrt(assetId, options = {}) {
       digital: true,
       analogue: true,
       enforce: false,
+      requireHDCP: 'HDCP_V2',  // Require HDCP 2.x for better protection
     },
   } = options;
 
@@ -48,7 +49,7 @@ function buildPurchaseCrt(assetId, options = {}) {
     storeLicense,
   };
 
-  logger.debug('Built purchase CRT', { assetId, storeLicense });
+  logger.debug('Built purchase CRT', { assetId, storeLicense, requireHDCP: outputProtection.requireHDCP });
   return crt;
 }
 
@@ -72,6 +73,7 @@ function buildRentalCrt(assetId, options = {}) {
       digital: true,
       analogue: true,
       enforce: false,
+      requireHDCP: 'HDCP_V2',  // Require HDCP 2.x for better protection
     },
   } = options;
 
@@ -87,7 +89,7 @@ function buildRentalCrt(assetId, options = {}) {
     storeLicense,
   };
 
-  logger.debug('Built rental CRT', { assetId, relativeExpiration, playDuration });
+  logger.debug('Built rental CRT', { assetId, relativeExpiration, playDuration, requireHDCP: outputProtection.requireHDCP });
   return crt;
 }
 
@@ -155,27 +157,49 @@ function buildCallbackResponse(callbackPayload, options = {}) {
     licenseType = 'purchase',
     relativeExpiration,
     playDuration,
-    enforce = false,
+    enforce = false,  // Default to false, enable in production for HDCP enforcement
   } = options;
 
   const assetId = callbackPayload.asset || '';
   const { drmScheme, clientInfo } = callbackPayload;
 
   // -----------------------------------------------------------------------
-  // Output protection: adjust enforcement based on DRM scheme + security level.
+  // Output protection: adjust enforcement and HDCP requirements based on
+  // DRM scheme + security level.
   //
-  // For Widevine L3 (software-only), HDCP may not be available, so we
-  // relax enforcement. For L1 (hardware), we can enforce.
+  // Hardware-based DRM (L1/L2) can enforce HDCP for screen capture protection.
+  // Software-based DRM (L3) cannot reliably enforce HDCP.
   // -----------------------------------------------------------------------
   let enforceOutputProtection = enforce;
+  let requireHDCP = 'HDCP_NONE';
 
   if (drmScheme === DRM_SCHEMES.WIDEVINE_MODULAR && clientInfo) {
-    // secLevel can be a number (3) or string ('L3', 'SW_SECURE_CRYPTO')
+    // secLevel can be a number (3) or string ('L3', 'SW_SECURE_CRYPTO', 'L1', etc.)
     const secLevel = String(clientInfo.secLevel || '').toUpperCase();
+    
+    // Widevine L1 (hardware) = can enforce HDCP 2.x for best protection
+    if (secLevel === 'L1' || secLevel === 'HW_SECURE_ALL' || secLevel === 'HW_SECURE_DECODE') {
+      enforceOutputProtection = true;
+      requireHDCP = 'HDCP_V2';
+      logger.debug('Widevine L1 detected — enabling HDCP 2.x enforcement', {
+        secLevel: clientInfo.secLevel,
+        user: callbackPayload.user,
+      });
+    }
+    // Widevine L2 (some hardware) = can enforce HDCP 1.x
+    else if (secLevel === 'L2' || secLevel === 'HW_SECURE_CRYPTO') {
+      enforceOutputProtection = true;
+      requireHDCP = 'HDCP_V1';
+      logger.debug('Widevine L2 detected — enabling HDCP 1.x enforcement', {
+        secLevel: clientInfo.secLevel,
+        user: callbackPayload.user,
+      });
+    }
     // Widevine L3 / SW_SECURE_CRYPTO = software only, can't enforce HDCP
-    if (secLevel === 'L3' || secLevel === 'SW_SECURE_CRYPTO' || secLevel === '3') {
+    else if (secLevel === 'L3' || secLevel === 'SW_SECURE_CRYPTO' || secLevel === '3' || secLevel === 'SW_SECURE_DISPLAY') {
       enforceOutputProtection = false;
-      logger.debug('Widevine L3 detected — disabling output protection enforcement', {
+      requireHDCP = 'HDCP_NONE';
+      logger.debug('Widevine L3 detected — disabling output protection enforcement (SW DRM cannot prevent screen capture)', {
         secLevel: clientInfo.secLevel,
         user: callbackPayload.user,
       });
@@ -186,6 +210,7 @@ function buildCallbackResponse(callbackPayload, options = {}) {
     digital: true,
     analogue: true,
     enforce: enforceOutputProtection,
+    requireHDCP: requireHDCP,
   };
 
   let crt;

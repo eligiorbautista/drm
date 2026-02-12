@@ -44,9 +44,10 @@ function detectPlatform() {
 }
 
 /**
- * Detect Android Widevine robustness level
+ * Detect Widevine hardware robustness level (for Android, Windows, macOS)
+ * Returns 'HW' if the device supports HW_SECURE_ALL (L1), otherwise 'SW' (L3)
  */
-async function detectAndroidRobustness(): Promise<'HW' | 'SW'> {
+async function detectWidevineRobustness(): Promise<'HW' | 'SW'> {
   try {
     await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
       initDataTypes: ['cenc'],
@@ -59,6 +60,27 @@ async function detectAndroidRobustness(): Promise<'HW' | 'SW'> {
     return 'HW';
   } catch {
     console.log('[DRM] Widevine L1 (HW) NOT supported — falling back to SW');
+    return 'SW';
+  }
+}
+
+/**
+ * Detect PlayReady hardware robustness level (for Windows Edge)
+ * Returns 'HW' if the device supports SL3000, otherwise 'SW'
+ */
+async function detectPlayReadyRobustness(): Promise<'HW' | 'SW'> {
+  try {
+    await navigator.requestMediaKeySystemAccess('com.microsoft.playready', [{
+      initDataTypes: ['cenc'],
+      videoCapabilities: [{
+        contentType: 'video/mp4; codecs="avc1.42E01E"',
+        robustness: '3000'
+      }]
+    }]);
+    console.log('[DRM] PlayReady SL3000 (HW) is supported');
+    return 'HW';
+  } catch {
+    console.log('[DRM] PlayReady SL3000 (HW) NOT supported — falling back to SW');
     return 'SW';
   }
 }
@@ -135,30 +157,60 @@ export function useDrm() {
     const params = new URLSearchParams(window.location.search);
     const robustnessOverride = params.get('robustness')?.toUpperCase() as 'HW' | 'SW' | null;
 
-    let androidRobustness: 'HW' | 'SW' = 'SW';
+    let detectedRobustness: 'HW' | 'SW' = 'SW';
+    
+    // Detect hardware DRM capabilities based on platform
     if (isAndroid) {
-      androidRobustness = await detectAndroidRobustness();
+      detectedRobustness = await detectWidevineRobustness();
+      logDebug(`Android: Using Widevine with robustness=${detectedRobustness}`);
+    } else if (platform === 'Windows') {
+      // On Windows, try PlayReady (Edge) first, then Widevine
+      const ua = navigator.userAgent;
+      const isEdge = /Edg\//.test(ua);
+      
+      if (isEdge) {
+        detectedRobustness = await detectPlayReadyRobustness();
+        if (detectedRobustness === 'HW') {
+          logDebug(`Windows Edge: Using PlayReady with robustness=HW`);
+        } else {
+          // Try Widevine as fallback
+          detectedRobustness = await detectWidevineRobustness();
+          logDebug(`Windows Edge (fallback): Using Widevine with robustness=${detectedRobustness}`);
+        }
+      } else {
+        // Chrome/Firefox on Windows use Widevine
+        detectedRobustness = await detectWidevineRobustness();
+        logDebug(`Windows: Using Widevine with robustness=${detectedRobustness}`);
+      }
+    } else if (platform === 'MacIntel') {
+      // macOS: try Widevine - Chrome supports it
+      detectedRobustness = await detectWidevineRobustness();
+      logDebug(`macOS: Using Widevine with robustness=${detectedRobustness}`);
+    } else {
+      // Linux, Firefox, etc. - use SW for compatibility
+      logDebug(`Platform ${platform}: Defaulting to SW robustness for compatibility`);
     }
 
     // Apply override if provided
     if (robustnessOverride === 'HW' || robustnessOverride === 'SW') {
-      androidRobustness = robustnessOverride;
+      detectedRobustness = robustnessOverride;
       logDebug(`Robustness overridden via URL param: ${robustnessOverride}`);
     }
 
-    // Determine media buffer size based on platform
+    // Determine media buffer size based on platform and robustness
     let mediaBufferMs = options.mediaBufferMs || -1;
-    if (isAndroid && androidRobustness === 'HW' && mediaBufferMs < 600) {
+    if (detectedRobustness === 'HW' && mediaBufferMs < 1200) {
+      // HW DRM needs larger buffer (1200ms) for secure decryption
       mediaBufferMs = 1200;
-      logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Android HW robustness`);
+      logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for HW robustness`);
     } else if (isFirefox && mediaBufferMs < 900) {
       // Firefox specifically needs 900ms to prevent stuttering (per client-sdk-changelog.md)
       mediaBufferMs = 900;
-      logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Firefox (Firefox-specific requirement)`);
+      logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Firefox`);
     } else if (mediaBufferMs < 600) {
-      // Other desktop browsers using SW CDM need at least 600ms
+      // SW CDM needs at least 600ms
       mediaBufferMs = 600;
-      logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Desktop/Software DRM`);
+      logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for SW DRM`);
     }
 
     // Encryption mode MUST match the sender
@@ -173,7 +225,7 @@ export function useDrm() {
     // @ts-ignore: Accessing static properties via string index
     const env = rtcDrmEnvironments[options.environment || 'Staging'];
 
-    const robustness: 'HW' | 'SW' = isAndroid ? androidRobustness : 'SW';
+    const robustness: 'HW' | 'SW' = detectedRobustness;
 
     const videoConfig: TrackConfig = videoTrackConfig || {
       codec: 'H264' as const,
