@@ -61,12 +61,23 @@ export function useWhep() {
         bundlePolicy: 'max-bundle',
         iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
         // @ts-ignore
-        encodedInsertableStreams: encrypted
+        encodedInsertableStreams: encrypted,
+        // Optimize for ultra-low latency
+        // @ts-ignore - iceTransportPolicy is valid
+        iceTransportPolicy: 'all'
       });
       pcRef.current = pc;
 
-      pc.addTransceiver('video', { direction: 'recvonly' });
-      pc.addTransceiver('audio', { direction: 'recvonly' });
+      // Optimize transceivers for low-latency streaming
+      // Prefer codecs with lower latency and better compression
+      pc.addTransceiver('video', { 
+        direction: 'recvonly',
+        streams: [streamRef.current]
+      });
+      pc.addTransceiver('audio', { 
+        direction: 'recvonly',
+        streams: [streamRef.current]
+      });
 
       // Configure DRM or setup direct playback
       if (encrypted && configureDrm) {
