@@ -299,9 +299,13 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     const uaHasIOS = /iPhone|iPad|iPod|iOS/i.test(navigator.userAgent);
     const isIOS = uaHasIOS || platform.toLowerCase() === 'ios';
     
-    // Safari detection: Safari on macOS uses FairPlay
-    const uaHasSafari = /Safari/i.test(navigator.userAgent) && !/Chrome/i.test(navigator.userAgent);
-    const isSafari = uaHasSafari || (platform.toLowerCase().includes('mac') && uaHasSafari);
+    // Safari detection: Must be Safari AND NOT Chrome/Edge/Firefox
+    // Chrome and Edge on Chrome engine also contain "Safari" in userAgent
+    const uaHasChrome = /Chrome/i.test(navigator.userAgent);
+    const uaHasEdge = /Edg/i.test(navigator.userAgent);
+    const uaHasSafari = /Safari/i.test(navigator.userAgent) && !uaHasChrome;
+    // Only use FairPlay (isSafari=true) if it's actually Safari (not Chrome/Edge)
+    const isSafari = uaHasSafari && !uaHasEdge;
     
     // Android detection: prioritize userAgent over platform (Firefox/Chrome on Android)
     const isAndroid = uaHasAndroid || 
@@ -314,14 +318,20 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     // Windows detection (for non-Firefox browsers)
     const isWindows = !isFirefox && (/windows/i.test(platform) || /Win/i.test(navigator.userAgent));
     
-    // Platform detection priority: iOS > Android > Windows > Firefox > Safari > Unknown
+    // Chrome/Edge detection (excluding mobile which are handled separately)
+    const isChrome = (uaHasChrome && !uaHasEdge) && !isMobile;
+    const isEdge = uaHasEdge && !isMobile;
+    
+    // Platform detection priority: iOS > Android > Windows > Firefox > Safari > Chrome/Edge > Unknown
     const detectedPlatform = isIOS ? 'iOS' : 
                            isAndroid ? 'Android' : 
                            isWindows ? 'Windows' : 
                            isFirefox ? 'Firefox' : 
                            isSafari ? 'Safari' : 
+                           isChrome ? 'Chrome' :
+                           isEdge ? 'Edge' :
                            (platform || 'Unknown');
-    logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, isAndroid=${isAndroid}, isFirefox=${isFirefox}, isIOS=${isIOS}, isSafari=${isSafari}, uaHasMobile=${uaHasMobile}`);
+    logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, isAndroid=${isAndroid}, isFirefox=${isFirefox}, isIOS=${isIOS}, isSafari=${isSafari}, isChrome=${isChrome}, isEdge=${isEdge}, uaHasMobile=${uaHasMobile}`);
     logDebug(`Detected platform: ${detectedPlatform} (FairPlay: ${isIOS || isSafari})`);
 
     const params = new URLSearchParams(window.location.search);
@@ -420,19 +430,51 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       mediaBufferMs
     };
 
+    logDebug(`Final video config: ${JSON.stringify({
+      codec: videoConfig.codec,
+      encryption: videoConfig.encryption,
+      robustness: videoConfig.robustness,
+      hasKeyId: !!videoConfig.keyId,
+      hasIv: !!videoConfig.iv
+    })}`);
+
+    logDebug(`DRM config before adding type: ${JSON.stringify({
+      merchant: drmConfig.merchant,
+      userId: drmConfig.userId,
+      environment: 'Staging',
+      mediaBufferMs: drmConfig.mediaBufferMs,
+      detectedPlatform
+    })}`);
+
     // Add DRM type based on platform for proper license request handling
     // This is especially important for Callback Authorization
     if (isIOS || isSafari) {
+      // iOS Safari and macOS Safari use FairPlay
       drmConfig.type = 'FairPlay';
       logDebug('Setting DRM type to FairPlay for iOS/Safari');
+    } else if (isChrome || isEdge) {
+      // Chrome and Edge (on all desktop platforms) use Widevine
+      drmConfig.type = 'Widevine';
+      logDebug(`Setting DRM type to Widevine for ${detectedPlatform}`);
     } else if (isAndroid) {
+      // Android uses Widevine (L1 hardware or L3 software)
       drmConfig.type = 'Widevine';
       logDebug('Setting DRM type to Widevine for Android');
     } else if (isWindows) {
-      // Windows supports both Widevine and PlayReady, prefer Widevine unless specified
+      // Windows supports both Widevine and PlayReady via Chrome/Edge, using Widevine here
       drmConfig.type = 'Widevine';
       logDebug('Setting DRM type to Widevine for Windows');
+    } else if (isFirefox) {
+      // Firefox uses Widevine (even when running on macOS/Linux)
+      drmConfig.type = 'Widevine';
+      logDebug('Setting DRM type to Widevine for Firefox');
+    } else {
+      // Default fallback: Linux, unknown platforms - use Widevine
+      drmConfig.type = 'Widevine';
+      logDebug(`Setting DRM type to Widevine for ${detectedPlatform} (default)`);
     }
+
+    logDebug(`Final DRM config type: ${drmConfig.type}`);
 
     // Add FairPlay-specific configuration for iOS/Safari
     if (isIOS || isSafari) {
