@@ -106,11 +106,18 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   };
 
   useEffect(() => {
+    console.log('[Player] isMuted changed to:', isMuted);
     if (videoRef.current) {
       videoRef.current.muted = isMuted;
+      console.log('[Player] Video muted set to:', videoRef.current.muted);
     }
     if (audioRef.current) {
       audioRef.current.muted = isMuted;
+      if (!isMuted) {
+        audioRef.current.volume = 1.0;
+        audioRef.current.play().catch(e => console.warn('[Player] Auto-play failed on unmute:', e.message));
+      }
+      console.log('[Player] Audio muted set to:', audioRef.current.muted, 'volume:', audioRef.current.volume);
     }
   }, [isMuted]);
 
@@ -217,32 +224,50 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   // Track when video is actually playing
   useEffect(() => {
     const video = videoRef.current;
+    const audio = audioRef.current;
     if (!video) return;
 
-    const handlePlaying = () => {
+    const handleVideoPlaying = () => {
       console.log('[Player] Video is now playing');
       setIsPlaying(true);
     };
 
-    const handlePause = () => {
+    const handleAudioPlaying = () => {
+      console.log('[Player] Audio is now playing');
+      setIsPlaying(true);
+    };
+
+    const handleVideoPause = () => {
       console.log('[Player] Video paused');
       setIsPlaying(false);
     };
 
+    const handleAudioPause = () => {
+      console.log('[Player] Audio paused');
+      setIsPlaying(false);
+    };
+
     const handleWaiting = () => {
-      console.log('[Player] Video waiting for data');
+      console.log('[Player] Waiting for data');
       setIsPlaying(false);
     };
 
     const handleEnded = () => {
-      console.log('[Player] Video ended');
+      console.log('[Player] Video/audio ended');
       setIsPlaying(false);
     };
 
-    video.addEventListener('playing', handlePlaying);
-    video.addEventListener('pause', handlePause);
+    video.addEventListener('playing', handleVideoPlaying);
+    video.addEventListener('pause', handleVideoPause);
     video.addEventListener('waiting', handleWaiting);
     video.addEventListener('ended', handleEnded);
+
+    if (audio) {
+      audio.addEventListener('playing', handleAudioPlaying);
+      audio.addEventListener('pause', handleAudioPause);
+      audio.addEventListener('waiting', handleWaiting);
+      audio.addEventListener('ended', handleEnded);
+    }
 
     // Reset playing state when disconnected
     if (!isConnected) {
@@ -250,10 +275,16 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
 
     return () => {
-      video.removeEventListener('playing', handlePlaying);
-      video.removeEventListener('pause', handlePause);
+      video.removeEventListener('playing', handleVideoPlaying);
+      video.removeEventListener('pause', handleVideoPause);
       video.removeEventListener('waiting', handleWaiting);
       video.removeEventListener('ended', handleEnded);
+      if (audio) {
+        audio.removeEventListener('playing', handleAudioPlaying);
+        audio.removeEventListener('pause', handleAudioPause);
+        audio.removeEventListener('waiting', handleWaiting);
+        audio.removeEventListener('ended', handleEnded);
+      }
     };
   }, [isConnected]);
 
@@ -484,11 +515,18 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         logDebug(`rtcDrmOnTrack succeeded for ${event.track.kind} - Stream is being DECRYPTED`);
         // Explicitly call play() after DRM processes the track (matches whep behavior)
         if (event.track.kind === 'video') {
+          // Set isPlaying to true when video is ready
+          setIsPlaying(true);
           videoElement.playbackRate = 1.0;  // Ensure video plays at normal speed
           videoElement.play()
-            .then(() => logDebug('videoElement.play() resolved'))
+            .then(() => {
+              logDebug('videoElement.play() resolved');
+              console.log('[Player] Video playing');
+            })
             .catch((err: any) => logDebug(`videoElement.play() rejected: ${err.message}`));
         } else if (event.track.kind === 'audio') {
+          // Set isPlaying to true when audio is ready
+          setIsPlaying(true);
           audioElement.volume = 1.0;
           audioElement.playbackRate = 1.0;  // Fix chipmunk sound
           audioElement.play()
@@ -575,19 +613,28 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
           {/* Unmute Button - Only visible when loader is gone (stream is playing) */}
           {isMuted && isPlaying && !isConnecting && !error && !drmError && (
             <button
-              onClick={() => {
+              onClick={async () => {
+                console.log('[Player] Unmute button clicked');
                 if (videoRef.current) {
                   videoRef.current.muted = false;
+                  videoRef.current.volume = 1.0;
+                  console.log('[Player] Video unmuted');
                 }
                 if (audioRef.current) {
                   audioRef.current.muted = false;
                   audioRef.current.volume = 1.0;
-                  audioRef.current.playbackRate = 1.0;  // Fix chipmunk sound
+                  audioRef.current.playbackRate = 1.0;
                   // Force audio to play
-                  audioRef.current.play().catch(e => console.warn('[Player] Audio play failed:', e.message));
+                  try {
+                    await audioRef.current.play();
+                    console.log('[Player] Audio unmuted and playing');
+                  } catch (e) {
+                    console.warn('[Player] Audio play failed:', e);
+                  }
                 }
+                // Update state after refs are updated
                 setIsMuted(false);
-                console.log('[Player] Unmute clicked - unmuted both video and audio elements');
+                console.log('[Player] isMuted state set to false');
               }}
               className="fixed bottom-4 right-4 z-30 px-4 py-2 bg-[#252525]/80 backdrop-blur-sm text-white rounded-lg flex items-center gap-2 hover:bg-[#333333] transition-colors cursor-pointer border border-[#404040]"
             >
@@ -694,17 +741,26 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                     <div className="flex items-center gap-3 pointer-events-auto">
                       {isMuted && isPlaying && !isConnecting && !error && !drmError && (
                         <button
-                          onClick={() => {
+                          onClick={async () => {
+                            console.log('[Player] Fullscreen unmute button clicked');
                             if (videoRef.current) {
                               videoRef.current.muted = false;
+                              videoRef.current.volume = 1.0;
+                              console.log('[Player] Video unmuted (fullscreen)');
                             }
                             if (audioRef.current) {
                               audioRef.current.muted = false;
                               audioRef.current.volume = 1.0;
-                              audioRef.current.playbackRate = 1.0;  // Fix chipmunk sound
-                              audioRef.current.play().catch(e => console.warn('Audio play failed:', e.message));
+                              audioRef.current.playbackRate = 1.0;
+                              try {
+                                await audioRef.current.play();
+                                console.log('[Player] Audio unmuted and playing (fullscreen)');
+                              } catch (e) {
+                                console.warn('[Player] Audio play failed:', e);
+                              }
                             }
                             setIsMuted(false);
+                            console.log('[Player] isMuted state set to false (fullscreen)');
                           }}
                           className="px-3 py-1.5 bg-[#252525] hover:bg-[#333333] text-white text-sm rounded-lg transition-colors cursor-pointer flex items-center gap-2"
                           title="Click to unmute"
