@@ -406,6 +406,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     const audioElement = audioRef.current!;
 
     // Build DRM config with platform-specific settings
+    // For Callback Authorization: We pass merchant, userId, and environment
+    // DRMtoday calls our backend at /api/callback to get the CRT
     const drmConfig: any = {
       merchant: merchant || import.meta.env.VITE_DRM_MERCHANT,
       userId: userId || 'elidev-test',  // Required for Callback Authorization
@@ -417,6 +419,20 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       logLevel: 3,
       mediaBufferMs
     };
+
+    // Add DRM type based on platform for proper license request handling
+    // This is especially important for Callback Authorization
+    if (isIOS || isSafari) {
+      drmConfig.type = 'FairPlay';
+      logDebug('Setting DRM type to FairPlay for iOS/Safari');
+    } else if (isAndroid) {
+      drmConfig.type = 'Widevine';
+      logDebug('Setting DRM type to Widevine for Android');
+    } else if (isWindows) {
+      // Windows supports both Widevine and PlayReady, prefer Widevine unless specified
+      drmConfig.type = 'Widevine';
+      logDebug('Setting DRM type to Widevine for Windows');
+    }
 
     // Add FairPlay-specific configuration for iOS/Safari
     if (isIOS || isSafari) {
