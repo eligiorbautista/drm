@@ -1,7 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useWhep } from '../hooks/useWhep';
-import { rtcDrmConfigure, rtcDrmOnTrack, rtcDrmEnvironments } from '../lib/rtc-drm-transform.min.js';
-import { hexToUint8Array, detectHardwareSecuritySupport } from '../lib/drmUtils';
+import { detectDrmCapability } from '../lib/drmCapability';
+import { initializeDrm, type DrmEventHandlers } from '../lib/drmConfig';
+import { checkEmeAvailability } from '../lib/drmUtils';
 import { DebugPanel } from './DebugPanel';
 
 export interface PlayerProps {
@@ -14,56 +15,6 @@ export interface PlayerProps {
 }
 
 const DEBUG_PANEL_ID = 'player-debug';
-
-/**
- * Checks if Encrypted Media Extensions (EME) are available in the browser.
- * In cross-origin iframes, EME is blocked unless the parent <iframe> element
- * includes allow="encrypted-media" in its attributes.
- *
- * @param logDebug - Function to log debug messages
- * @returns Promise resolving to EME availability and reason if unavailable
- */
-function checkEmeAvailability(logDebug: (msg: string) => void): Promise<{ available: boolean; reason?: string }> {
-  const isInIframe = window.self !== window.top;
-
-  if (!navigator.requestMediaKeySystemAccess) {
-    return Promise.resolve({ available: false, reason: 'Your browser does not support Encrypted Media Extensions (EME). DRM playback is not possible.' });
-  }
-
-  // Probe EME with a minimal config to verify the permission is delegated
-  const probeConfigs: MediaKeySystemConfiguration[] = [{
-    initDataTypes: ['cenc'],
-    videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"', robustness: '' }]
-  }];
-
-  // Try Widevine first (Chrome/Edge/Android), then FairPlay (Safari), then PlayReady (Edge)
-  const keySystems = ['com.widevine.alpha', 'com.apple.fps.1_0', 'com.microsoft.playready.recommendation'];
-
-  for (const ks of keySystems) {
-    try {
-      return navigator.requestMediaKeySystemAccess(ks, probeConfigs).then(() => ({ available: true }));
-    } catch (e: any) {
-      // NotAllowedError = Permissions-Policy blocked (iframe without allow="encrypted-media")
-      if (e.name === 'NotAllowedError') {
-        const msg = isInIframe
-          ? 'DRM is blocked because the iframe is missing the "encrypted-media" permission. '
-          + 'The embedding page must use: <iframe allow="encrypted-media; autoplay" ...>'
-          : 'DRM is blocked by browser permissions policy. Ensure encrypted-media is allowed.';
-        logDebug(`EME blocked (${ks}): ${e.name} — ${e.message}`);
-        return Promise.resolve({ available: false, reason: msg });
-      }
-      // NotSupportedError = this key system isn't available, try the next one
-    }
-  }
-
-  // None of the key systems are supported at all
-  return Promise.resolve({
-    available: false,
-    reason: isInIframe
-      ? 'No supported DRM key system found. If this player is in an iframe, make sure the parent uses: <iframe allow="encrypted-media; autoplay" ...>'
-      : 'No supported DRM key system found in this browser.'
-  });
-}
 
 export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encrypted, isEmbedMode = false, onOpenEmbed }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -79,7 +30,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   const [isPlaying, setIsPlaying] = useState(false);
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
 
-  // --- Logging helpers ---
+  // ---------------------------------------------------------------------------
+  // Logging helpers
+  // ---------------------------------------------------------------------------
   // In embed mode, disable all logging for security and clean output
   const broadcastDebugEvent = isEmbedMode
     ? () => { }
@@ -112,14 +65,17 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'warning', message });
     };
 
-  // --- Sync mute state to video/audio elements ---
+  // ---------------------------------------------------------------------------
+  // Sync mute state to video/audio elements
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (videoRef.current) videoRef.current.muted = isMuted;
     if (audioRef.current) audioRef.current.muted = isMuted;
   }, [isMuted]);
 
-  // --- Fullscreen handling ---
-  // Toggle fullscreen mode using Fullscreen API with CSS fallback for iframe compatibility
+  // ---------------------------------------------------------------------------
+  // Fullscreen handling
+  // ---------------------------------------------------------------------------
   const toggleFullscreen = async () => {
     if (!videoContainerRef.current) return;
 
@@ -148,7 +104,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // --- Auto-connect and fullscreen for embed mode ---
+  // ---------------------------------------------------------------------------
+  // Auto-connect and fullscreen for embed mode
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (isEmbedMode) {
       // Small delay to ensure component is mounted
@@ -160,12 +118,13 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
   }, [endpoint]);
 
-  // --- Ensure video is playing when connected ---
+  // ---------------------------------------------------------------------------
+  // Ensure video is playing when connected
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (isConnected && videoRef.current) {
       console.log('[Player] Connected - ensuring video is playing');
 
-      // Check if video is already playing
       if (videoRef.current.paused) {
         console.log('[Player] Video is paused, attempting to play');
         const playPromise = videoRef.current.play();
@@ -175,13 +134,11 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             console.log('[Player] Video play() succeeded');
           }).catch((e) => {
             console.warn('[Player] Video play() failed:', e.name, e.message);
-            // Try again with unmute if it's an autoplay policy issue
             if (e.name === 'NotAllowedError') {
               console.log('[Player] Autoplay blocked - video may require user interaction');
               if (videoRef.current) {
                 videoRef.current.muted = false;
                 setIsMuted(false);
-                // Try play again after unmute
                 setTimeout(() => {
                   if (videoRef.current && videoRef.current.paused) {
                     videoRef.current.play().catch(e2 => console.warn('[Player] Second play attempt failed:', e2.message));
@@ -197,7 +154,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
   }, [isConnected]);
 
-  // --- Track when video is actually playing ---
+  // ---------------------------------------------------------------------------
+  // Track when video is actually playing
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -219,7 +178,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     };
   }, [isConnected]);
 
-  // --- Extra monitoring for embed mode: ensure video stays playing ---
+  // ---------------------------------------------------------------------------
+  // Extra monitoring for embed mode: ensure video stays playing
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!isEmbedMode || !isConnected) return;
 
@@ -232,7 +193,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       if (video.paused && video.srcObject) {
         console.log('[Embed Mode] Video paused unexpectedly, attempting to restart...');
 
-        // Ensure audio context is running (browser policy)
         const audioCtx = (window as any).webkitAudioContext || (window as any).AudioContext;
         if (audioCtx && audioCtx.state === 'suspended') {
           audioCtx.resume().then(() => {
@@ -240,13 +200,11 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
           });
         }
 
-        // Try to play with user gesture if possible
         video.play()
           .then(() => console.log('[Embed Mode] Video restarted successfully'))
           .catch(e => {
             console.warn('[Embed Mode] Play failed:', e.message);
 
-            // For AbortError, try unmuting first
             if (e.name === 'AbortError' && video.muted) {
               video.muted = false;
               setTimeout(() => {
@@ -270,13 +228,26 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     return () => clearInterval(checkVideo);
   }, [isConnected, isEmbedMode]);
 
+  // ---------------------------------------------------------------------------
+  // DRM Configuration (using shared modules)
+  // ---------------------------------------------------------------------------
+
   /**
    * Configures DRM for the peer connection.
-   * Handles platform detection, DRM config, and event listeners.
+   *
+   * Pipeline:
+   *   1. Check EME availability (catches iframe permission issues)
+   *   2. Detect DRM capabilities (HW security probe across all CDMs)
+   *   3. If blocked → set L3 state and abort (fallback overlay shows)
+   *   4. Build platform-aware DRM config
+   *   5. Attach event listeners + track handler
+   *   6. Call rtcDrmConfigure() to start license acquisition
+   *
    * @param pc - RTCPeerConnection instance
    */
   const configureDrm = async (pc: RTCPeerConnection) => {
-    // Early check: verify EME is available (catches iframe permission issues)
+    // ── Step 1: EME availability check ──────────────────────────────────
+    // Catches cross-origin iframe permission issues early before any DRM work.
     if (encrypted) {
       logDebug('DRM Encrypted Playback Mode ENABLED');
       const emeCheck = await checkEmeAvailability(logDebug);
@@ -290,168 +261,42 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     } else {
       logWarning('DRM Encrypted Playback Mode DISABLED - Playing unencrypted stream');
     }
-    // --- Hardware security pre-flight check ---
-    // Detect if ANY DRM system supports hardware security BEFORE attempting
-    // DRM setup so we can show a friendly overlay instead of a cryptic error.
-    let hwSecurityDetails: { system: string; hwSecure: boolean }[] = [];
+
+    // ── Step 2: DRM capability detection ────────────────────────────────
+    // Probes Widevine (HW_SECURE_ALL), PlayReady (SL3000), and FairPlay.
+    // Returns security level, selected CDM type, and block reason if any.
     if (encrypted) {
       setSecurityLevel('checking');
-      const { supported, details } = await detectHardwareSecuritySupport();
-      hwSecurityDetails = details;
-      const detailStr = details.map(d => `${d.system}: ${d.hwSecure ? 'HW' : 'SW'}`).join(', ');
-      logDebug(`DRM hardware security check: ${detailStr}`);
+      const capability = await detectDrmCapability(logDebug);
 
-      if (!supported) {
+      if (!capability.supported) {
+        // ── Step 3: Blocked — show fallback overlay ─────────────────────
+        // Device only supports Widevine L3 (software) or has no DRM at all.
+        // We require L1/hardware-backed security — no exceptions.
         setSecurityLevel('L3');
-        logError(`[DRM] No DRM system supports hardware security on this device (${detailStr})`);
-        return; // Abort DRM setup — overlay will show
+        logError(`[DRM] ${capability.blockReason}`);
+        return; // Abort DRM setup — L3 overlay will show
       }
 
       setSecurityLevel('L1');
       logDebug('Hardware-secure DRM available — proceeding with setup');
-    }
 
-    const keyId = hexToUint8Array(import.meta.env.VITE_DRM_KEY_ID);
-    const iv = hexToUint8Array(import.meta.env.VITE_DRM_IV);
-
-    // Platform detection (same as whep)
-    const uad = (navigator as any).userAgentData;
-    const platform = uad?.platform || navigator.platform || '';
-    const isMobile = uad?.mobile === true;
-
-    // Firefox reports all devices as "Linux" for privacy, so we need to detect it via userAgent
-    // and also check for Android in userAgent before checking platform
-    const uaHasAndroid = /Android/i.test(navigator.userAgent);
-    const uaHasFirefox = /Firefox/i.test(navigator.userAgent);
-    const uaHasMobile = /Mobile|Tablet/i.test(navigator.userAgent);
-
-    // iOS detection: check for iPhone, iPad, iPod, or iOS in userAgent
-    // iOS uses Safari/FairPlay which requires iv but handles keyId differently
-    const uaHasIOS = /iPhone|iPad|iPod|iOS/i.test(navigator.userAgent);
-    const isIOS = uaHasIOS || platform.toLowerCase() === 'ios';
-
-    // Safari detection: Must be Safari AND NOT Chrome/Edge/Firefox
-    // Chrome and Edge on Chrome engine also contain "Safari" in userAgent
-    const uaHasChrome = /Chrome/i.test(navigator.userAgent);
-    const uaHasEdge = /Edg/i.test(navigator.userAgent);
-    const uaHasSafari = /Safari/i.test(navigator.userAgent) && !uaHasChrome;
-    // Only use FairPlay (isSafari=true) if it's actually Safari (not Chrome/Edge)
-    const isSafari = uaHasSafari && !uaHasEdge;
-
-    // Android detection: prioritize userAgent over platform (Firefox/Chrome on Android)
-    const isAndroid = uaHasAndroid ||
-      platform.toLowerCase() === 'android' ||
-      (isMobile && /linux/i.test(platform));
-
-    // Firefox detection: check userAgent (works cross-platform)
-    const isFirefox = uaHasFirefox;
-
-    // Windows detection (for non-Firefox browsers)
-    const isWindows = !isFirefox && (/windows/i.test(platform) || /Win/i.test(navigator.userAgent));
-
-    // Chrome/Edge detection (excluding mobile which are handled separately)
-    const isChrome = (uaHasChrome && !uaHasEdge) && !isMobile;
-    const isEdge = uaHasEdge && !isMobile;
-
-    // Platform detection priority: iOS > Android > Windows > Firefox > Safari > Chrome/Edge > Unknown
-    const detectedPlatform = isIOS ? 'iOS' :
-      isAndroid ? 'Android' :
-        isWindows ? 'Windows' :
-          isFirefox ? 'Firefox' :
-            isSafari ? 'Safari' :
-              isChrome ? 'Chrome' :
-                isEdge ? 'Edge' :
-                  (platform || 'Unknown');
-    logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, isAndroid=${isAndroid}, isFirefox=${isFirefox}, isIOS=${isIOS}, isSafari=${isSafari}, isChrome=${isChrome}, isEdge=${isEdge}, uaHasMobile=${uaHasMobile}`);
-    logDebug(`Detected platform: ${detectedPlatform} (FairPlay: ${isIOS || isSafari})`);
-
-    // URLSearchParams for robustness override is no longer needed
-    // Robustness override is no longer supported; only HW is used
-
-    let androidRobustness = 'HW';
-    // Only HW robustness is supported; no override or SW fallback
-    // All platforms will use HW robustness for DRM
-
-    // Media buffer sizing:
-    // - Android HW (Widevine L1) needs at least 1200ms
-    // - Firefox needs at least 900ms (from client-sdk-changelog.md)
-    // - Other platforms (Chrome/Edge SW on Linux/macOS/Windows) need at least 600ms for SW-secure decryption
-    let mediaBufferMs = -1;
-    if (isAndroid && androidRobustness === 'HW') {
-      mediaBufferMs = 1200;
-      logDebug(`Set mediaBufferMs=1200 for Android HW robustness`);
-    } else if (isFirefox && mediaBufferMs < 900) {
-      // Firefox specifically needs 900ms to prevent stuttering
-      mediaBufferMs = 900;
-      logDebug(`Set mediaBufferMs=900 for Firefox (Firefox-specific requirement)`);
-    } else if (mediaBufferMs < 600) {
-      // Default to 600ms for other platforms
-      mediaBufferMs = 600;
-      logDebug(`Set mediaBufferMs=600 for other platforms`);
-    }
-
-    // iOS/FairPlay handling:
-    // - FairPlay requires iv for initialization
-    // - keyId may be omitted or handled differently on iOS
-    // - Safari/FairPlay uses fpsCertificate and fpsLicenseUrl if needed
-    let videoConfig;
-    if (isIOS) {
-      // iOS FairPlay: requires iv, keyId may be embedded in the stream or SKD URL
-      videoConfig = {
-        codec: 'H264' as const,
-        encryption: 'cbcs' as const,
-        // iOS FairPlay doesn't support robustness param, so omit it
-        iv, // iv is REQUIRED for FairPlay
-        requireHDCP: 'HDCP_v1' as const,
-        // Note: keyId is often omitted for FairPlay as it's extracted from SKD URL
-        // Only include keyId if specifically needed for this stream
+      // ── Step 4–6: Build config, attach listeners, initialize DRM ──────
+      // The initializeDrm function handles:
+      //   - Building platform-aware config (FairPlay iv-only vs Widevine/PlayReady keyId+iv)
+      //   - Attaching diagnostic event listeners to video/audio elements
+      //   - Calling rtcDrmConfigure() to start license acquisition
+      //   - Wiring the track handler with retry-play logic
+      const handlers: DrmEventHandlers = {
+        onDebug: logDebug,
+        onError: logError,
+        onDrmError: setDrmError,
+        onPlayStarted: () => setIsPlaying(true),
+        onSetMuted: setIsMuted,
       };
-      logDebug('iOS/FairPlay detected - using iv (keyId handled by FairPlay SKD URL)');
-    } else {
-      // All other platforms: enforce HW robustness only
-      videoConfig = {
-        codec: 'H264' as const,
-        encryption: 'cbcs' as const,
-        robustness: 'HW' as const,
-        keyId,  // Widevine/PlayReady require explicit keyId
-        iv,   // iv is also used by other DRM systems
-        requireHDCP: 'HDCP_v1' as const,
-      };
-      logDebug(`${detectedPlatform} detected - using explicit keyId, iv, HW robustness, and HDCP_v1`);
-    }
 
-    // CALLBACK AUTHORIZATION MODE
-    // With Callback Authorization, DRMtoday calls our backend at /api/callback
-    // to get the CRT. We don't need to generate authToken or sessionId client-side.
-    // Just pass: merchant, userId, and environment.
-    logDebug('Using Callback Authorization - backend will provide CRT');
-
-    const videoElement = videoRef.current!;
-    const audioElement = audioRef.current!;
-
-    // Get environment from env config
-    const envValue = import.meta.env.VITE_DRM_ENVIRONMENT;
-    // @ts-ignore: Accessing static properties via string index
-    const drmtodayEnv = rtcDrmEnvironments[envValue === 'Production' || envValue === 'production'
-      ? 'Production'
-      : 'Staging'];
-    logDebug(`Using DRMtoday environment: ${envValue} -> ${drmtodayEnv.baseUrl()}`);
-
-    // Build DRM config with platform-specific settings
-    // For Callback Authorization: We pass merchant, userId, and environment
-    // DRMtoday calls our backend at /api/callback to get the CRT
-    const drmConfig: any = {
-      merchant: merchant || import.meta.env.VITE_DRM_MERCHANT,
-      userId: userId || 'elidev-test',  // Required for Callback Authorization
-      environment: drmtodayEnv,  // ✅ Now uses env instead of hardcoded Staging
-      videoElement,
-      audioElement,
-      video: videoConfig,
-      audio: { codec: 'opus' as const, encryption: 'clear' as const },
-      logLevel: 3,
-      mediaBufferMs,
-      // Intercept license requests for debugging
-      onFetch: async (url: string, opts: any) => {
+      // Build fetch interceptor for debugging license requests
+      const onFetch = isEmbedMode ? undefined : async (url: string, opts: any) => {
         logDebug(`[DRM Fetch] Requesting: ${url}`);
         logDebug(`[DRM Fetch] Method: ${opts.method}`);
         if (opts.body) {
@@ -477,191 +322,26 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
           logError(`[DRM Fetch] Network error: ${err.message}`);
           throw err;
         }
-      }
-    };
+      };
 
-    logDebug(`Final video config: ${JSON.stringify({
-      codec: videoConfig.codec,
-      encryption: videoConfig.encryption,
-      robustness: videoConfig.robustness,
-      hasKeyId: !!videoConfig.keyId,
-      hasIv: !!videoConfig.iv
-    })}`);
-
-    logDebug(`DRM config before adding type: ${JSON.stringify({
-      merchant: drmConfig.merchant,
-      userId: drmConfig.userId,
-      environment: 'Staging',
-      mediaBufferMs: drmConfig.mediaBufferMs,
-      detectedPlatform
-    })}`);
-
-    // Add DRM type based on platform AND hardware security support.
-    // The DRM library needs a `type` hint to know which CDM to use.
-    // 
-    // IMPORTANT: On Windows, Widevine is often L3 (software) while PlayReady
-    // is L1 (hardware). If we blindly set type='Widevine', the library won't
-    // try PlayReady and playback will fail. So we check which CDM actually
-    // has hardware support and prefer that one.
-    if (isIOS || isSafari) {
-      drmConfig.type = 'FairPlay';
-      logDebug('Setting DRM type to FairPlay for iOS/Safari');
-    } else {
-      // Use hardware security detection results (from the pre-flight check above)
-      // to pick the best CDM. This avoids a redundant EME probe.
-      const widevineHW = hwSecurityDetails.find(d => d.system === 'Widevine')?.hwSecure ?? false;
-      const playreadyHW = hwSecurityDetails.find(d => d.system === 'PlayReady')?.hwSecure ?? false;
-
-      if (widevineHW) {
-        // Widevine has HW support — use it (works on Android, ChromeOS, some Windows)
-        drmConfig.type = 'Widevine';
-        logDebug(`Setting DRM type to Widevine (HW-secure) for ${detectedPlatform}`);
-      } else if (playreadyHW) {
-        // PlayReady has HW support but Widevine doesn't — use PlayReady
-        // Common on Windows 11 with Edge where Widevine=L3, PlayReady=SL3000
-        drmConfig.type = 'PlayReady';
-        logDebug(`Setting DRM type to PlayReady (HW-secure, Widevine is SW-only) for ${detectedPlatform}`);
-      } else {
-        // No HW support detected — default to Widevine (shouldn't reach here
-        // if the L1 check above blocked, but just in case)
-        drmConfig.type = 'Widevine';
-        logDebug(`Setting DRM type to Widevine (default fallback) for ${detectedPlatform}`);
-      }
+      initializeDrm(pc, {
+        merchant: merchant || import.meta.env.VITE_DRM_MERCHANT,
+        userId: userId || 'elidev-test',
+        environmentName: import.meta.env.VITE_DRM_ENVIRONMENT || 'Staging',
+        videoElement: videoRef.current!,
+        audioElement: audioRef.current!,
+        keyIdHex: import.meta.env.VITE_DRM_KEY_ID,
+        ivHex: import.meta.env.VITE_DRM_IV,
+        encryptionMode: 'cbcs',
+        capability,
+        onFetch,
+      }, handlers);
     }
-
-
-    // Add FairPlay-specific configuration for iOS/Safari
-    if (isIOS || isSafari) {
-      logDebug(`Adding FairPlay-specific config for ${isIOS ? 'iOS' : 'Safari'}`);
-      // FairPlay uses fpsCertificateUrl and fpsLicenseUrl if custom endpoints needed
-      // The default DRMtoday endpoints are used automatically if not specified
-    }
-
-    // Event listeners (same as whep)
-    for (const evName of ['loadedmetadata', 'loadeddata', 'canplay', 'playing', 'waiting', 'stalled', 'error', 'emptied', 'suspend']) {
-      videoElement.addEventListener(evName, () => logDebug(`video event: ${evName}`));
-      audioElement.addEventListener(evName, () => logDebug(`audio event: ${evName}`));
-    }
-    videoElement.addEventListener('error', () => {
-      const e = videoElement.error;
-      logDebug(`video MediaError: code=${e?.code}, message=${e?.message}`);
-    });
-
-    videoElement.addEventListener('rtcdrmerror', (event: any) => {
-      const msg = event.detail?.message || 'Unknown DRM error';
-      logDebug(`DRM ERROR: ${msg}`);
-
-      // Non-fatal DRM events that should be treated as warnings, not errors:
-      //
-      // 1. output-restricted/downscaled: CDM may still allow playback
-      // 2. requestMediaKeySystemAccess failures: the DRM library probes multiple
-      //    CDMs internally (Widevine, PlayReady, FairPlay). A failure for ONE CDM
-      //    is expected if the device uses a different CDM (e.g. Windows with
-      //    Widevine L3 will fail `com.widevine.alpha.experiment` but then succeed
-      //    with PlayReady). These are NOT fatal errors.
-      // 3. "not usable for decryption": transient key status, often non-fatal
-      const isNonFatal = msg.includes('output-restricted') ||
-        msg.includes('output-downscaled') ||
-        msg.includes('status: output-restricted') ||
-        msg.includes('not usable for decryption') ||
-        msg.includes('requestMediaKeySystemAccess');
-      if (isNonFatal) {
-        logDebug(`[DRM] Non-fatal DRM event — treating as warning: ${msg}`);
-        console.warn('[DRM]', msg);
-        return; // don't block the UI — let the library try other CDMs
-      }
-
-      const isInIframe = window.self !== window.top;
-      if (isInIframe && msg.includes('not-allowed')) {
-        const iframeHint = 'DRM blocked inside iframe. '
-          + 'The parent page must embed with: <iframe allow="encrypted-media; autoplay" ...>';
-        logDebug(iframeHint);
-        setDrmError(iframeHint);
-      } else {
-        setDrmError(`DRM error: ${msg}`);
-      }
-    });
-
-    logDebug(`DRM config: isIOS=${isIOS}, isAndroid=${isAndroid}, encryption=${videoConfig.encryption}, robustness=${videoConfig.robustness || 'N/A'}, mediaBufferMs=${mediaBufferMs}`);
-    logDebug(`[Callback Auth] Merchant: ${merchant || import.meta.env.VITE_DRM_MERCHANT}, KeyId: ${import.meta.env.VITE_DRM_KEY_ID}`);
-    logDebug(`[Callback Auth] DRMtoday License Server: ${rtcDrmEnvironments.Staging.baseUrl()}`);
-    logDebug(`[Callback Auth] DRMtoday will call your backend at: ${import.meta.env.VITE_DRM_BACKEND_URL}/api/callback`);
-    logDebug(`[Callback Auth] UserId: ${userId || 'elidev-test'}`);
-    logDebug('[Callback Auth] Mode: ENABLED - Backend provides CRT (no client-side authToken)');
-    logDebug('');
-    logDebug('IMPORTANT: DRM will only work if the stream is ENCRYPTED with matching keys!');
-    logDebug('   - Stream MUST be encrypted with the same KEY_ID:KEY_ID}');
-    logDebug('   - Otherwise, the player will just play unencrypted content');
-    logDebug('');
-
-    try {
-      rtcDrmConfigure(drmConfig);
-      logDebug('rtcDrmConfigure succeeded - License request sent to DRMtoday, waiting for callback...');
-    } catch (err: any) {
-      logDebug(`rtcDrmConfigure FAILED: ${err.message}`);
-      throw err;
-    }
-
-    pc.addEventListener('track', (event) => {
-      logDebug(`Track received: ${event.track.kind}`);
-      try {
-        rtcDrmOnTrack(event);
-        logDebug(`rtcDrmOnTrack succeeded for ${event.track.kind} - Stream is being DECRYPTED`);
-
-        // Helper function to retry play() with exponential backoff
-        const retryPlay = async (element: HTMLMediaElement, elementName: string, maxRetries = 3) => {
-          for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-              await element.play();
-              logDebug(`${elementName}: play() succeeded on attempt ${attempt}`);
-              return true;
-            } catch (err: any) {
-              logDebug(`${elementName}: play() rejected on attempt ${attempt}: ${err.name} - ${err.message}`);
-
-              // Handle autoplay policy restriction
-              if (err.name === 'NotAllowedError') {
-                logDebug(`${elementName}: Autoplay blocked, muting and retrying...`);
-                element.muted = true;
-                if (element === videoElement) setIsMuted(true);
-
-                try {
-                  await element.play();
-                  logDebug(`${elementName}: play() succeeded after muting`);
-                  return true;
-                } catch (mutePlayErr: any) {
-                  logError(`${elementName}: play() failed even after muting: ${mutePlayErr.message}`);
-                }
-              }
-
-              if (attempt < maxRetries) {
-                const delay = Math.pow(2, attempt) * 100; // 200ms, 400ms, 800ms
-                logDebug(`${elementName}: Retrying in ${delay}ms...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-              } else {
-                logError(`${elementName}: Failed to play after ${maxRetries} attempts: ${err.message}`);
-                return false;
-              }
-            }
-          }
-          return false;
-        };
-
-        // Explicitly call play() after DRM processes the track with retry logic
-        if (event.track.kind === 'video') {
-          retryPlay(videoElement, 'videoElement').then(success => {
-            if (success) {
-              setIsPlaying(true);
-            }
-          });
-        } else if (event.track.kind === 'audio') {
-          retryPlay(audioElement, 'audioElement');
-        }
-      } catch (err: any) {
-        logDebug(`rtcDrmOnTrack FAILED: ${err.message}`);
-        logError(`DRM Error - The stream might NOT be encrypted or keys don't match: ${err.message}`);
-      }
-    });
   };
+
+  // ---------------------------------------------------------------------------
+  // Connection handler
+  // ---------------------------------------------------------------------------
 
   /**
    * Initiates connection to the stream, optionally with DRM configuration.
@@ -673,8 +353,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       configureDrm: encrypted ? configureDrm : undefined
     }, videoRef.current, audioRef.current);
   };
-
-
 
   /**
    * Toggles mute state for both video and audio elements.
@@ -689,6 +367,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   return (
     <>
       {isEmbedMode ? (
@@ -896,21 +577,18 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
 
                     console.log('[Player] Video clicked, ensuring playback');
 
-                    // Ensure audio context is running
                     const audioCtx = (window as any).webkitAudioContext || (window as any).AudioContext;
                     if (audioCtx && audioCtx.state === 'suspended') {
                       console.log('[Player] Resuming AudioContext');
                       await audioCtx.resume();
                     }
 
-                    // Unmute if muted and user clicks
                     if (video.muted) {
                       video.muted = false;
                       setIsMuted(false);
                       console.log('[Player] Unmuted due to user interaction');
                     }
 
-                    // Try to play
                     try {
                       await video.play();
                       console.log('[Player] Video play() successful after click');

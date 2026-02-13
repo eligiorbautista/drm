@@ -26,6 +26,38 @@ vi.mock('../lib/drmUtils', async (importOriginal) => {
         { system: 'FairPlay', hwSecure: false },
       ]
     }),
+    checkEmeAvailability: vi.fn().mockResolvedValue({ available: true }),
+  };
+});
+
+// Mock detectDrmCapability to return a supported result in test environment.
+// In jsdom there is no EME, so without this mock the hook would always
+// throw WIDEVINE_L3_UNSUPPORTED.
+vi.mock('../lib/drmCapability', async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    detectDrmCapability: vi.fn().mockResolvedValue({
+      supported: true,
+      securityLevel: 'L1',
+      selectedDrmType: 'Widevine',
+      hwDetails: [
+        { system: 'Widevine', hwSecure: true },
+        { system: 'PlayReady', hwSecure: false },
+        { system: 'FairPlay', hwSecure: false },
+      ],
+      platform: {
+        isAndroid: false,
+        isFirefox: false,
+        isIOS: false,
+        isSafari: false,
+        isWindows: false,
+        isChrome: true,
+        isEdge: false,
+        isMobile: false,
+        detectedPlatform: 'Chrome',
+      },
+    }),
   };
 });
 

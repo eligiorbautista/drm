@@ -1,85 +1,59 @@
+/**
+ * useDrm Hook
+ *
+ * React hook that wraps the shared DRM infrastructure modules to provide
+ * a simple `setup()` / `handleTrack()` API for components.
+ *
+ * Architecture:
+ *   detectDrmCapability() → buildDrmConfig() → rtcDrmConfigure() → rtcDrmOnTrack()
+ *
+ * The hook itself holds a ref to the active DRM config and delegates all
+ * heavy lifting to the shared modules in `src/lib/`.
+ */
+
 import { useCallback, useRef } from 'react';
-import { rtcDrmConfigure, rtcDrmOnTrack, rtcDrmEnvironments } from '../lib/drm';
-import { hexToUint8Array, validateDrmKey, detectHardwareSecuritySupport } from '../lib/drmUtils';
+import { rtcDrmConfigure, rtcDrmOnTrack } from '../lib/drm';
 import type { DrmConfig, TrackConfig } from '../lib/drm';
+import { validateDrmKey } from '../lib/drmUtils';
+import { detectDrmCapability } from '../lib/drmCapability';
+import { buildDrmConfig, attachDrmEventListeners } from '../lib/drmConfig';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export interface UseDrmOptions {
   merchant: string;
   videoElement: HTMLVideoElement | null;
   audioElement?: HTMLAudioElement | null;
   environment?: 'Staging' | 'Production' | 'Development';
-  userId?: string;  // Required for Callback Authorization
+  userId?: string;
   keyId?: Uint8Array;
   iv?: Uint8Array;
   mediaBufferMs?: number;
   encryptionMode?: 'cenc' | 'cbcs';
 }
 
-/**
- * Platform detection utility
- * Note: Firefox reports all devices as "Linux" for privacy, so we detect it via userAgent
- */
-function detectPlatform() {
-  const uad = (navigator as any).userAgentData;
-  const platform = uad?.platform || navigator.platform || '';
-  const isMobile = uad?.mobile === true;
-
-  // Firefox reports as Linux everywhere - detect via userAgent
-  const uaHasAndroid = /Android/i.test(navigator.userAgent);
-  const uaHasFirefox = /Firefox/i.test(navigator.userAgent);
-
-  // Android detection: prioritize userAgent over platform
-  const isAndroid = uaHasAndroid ||
-    platform.toLowerCase() === 'android' ||
-    (isMobile && /linux/i.test(platform));
-
-  // Firefox detection
-  const isFirefox = uaHasFirefox;
-
-  return {
-    isAndroid,
-    isFirefox,
-    platform: isAndroid ? 'Android' : isFirefox ? 'Firefox' : (platform || 'Unknown')
-  };
-}
-
-/** Error code thrown when L3 (software-only) Widevine is detected */
+/** Error code thrown when only L3 (software-only) DRM is detected. */
 export const WIDEVINE_L3_UNSUPPORTED = 'WIDEVINE_L3_UNSUPPORTED';
 
-/**
- * Debug logger with on-screen overlay for physical devices
- */
+// ---------------------------------------------------------------------------
+// Logging Helpers
+// ---------------------------------------------------------------------------
+
+/** Debug logger that also dispatches to the debug panel overlay. */
 export function logDebug(msg: string) {
   console.log(msg);
-
-  // Send to debug panel
   window.dispatchEvent(
     new CustomEvent('debug-log', {
       detail: { id: 'player-debug', level: 'info' as const, message: msg, timestamp: new Date().toLocaleTimeString() },
     })
   );
-
-  // Legacy overlay support
-  let overlay = document.getElementById('debug-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'debug-overlay';
-    overlay.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:30vh;overflow-y:auto;background:rgba(0,0,0,0.85);color:#0f0;font-size:11px;font-family:monospace;padding:6px;z-index:9999;pointer-events:auto;';
-    document.body.appendChild(overlay);
-  }
-  const line = document.createElement('div');
-  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-  overlay.appendChild(line);
-  overlay.scrollTop = overlay.scrollHeight;
 }
 
-/**
- * Error logger that sends to debug panel with error level
- */
+/** Error logger that dispatches to the debug panel with error level. */
 export function logError(msg: string) {
   console.error(msg);
-
-  // Send to debug panel with error level
   window.dispatchEvent(
     new CustomEvent('debug-log', {
       detail: { id: 'player-debug', level: 'error' as const, message: msg, timestamp: new Date().toLocaleTimeString() },
@@ -87,18 +61,25 @@ export function logError(msg: string) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+
 export function useDrm() {
   const configRef = useRef<DrmConfig | null>(null);
 
+  /**
+   * Set up DRM: detect capabilities, build config, and call rtcDrmConfigure.
+   * Throws if the device does not support hardware-backed DRM.
+   */
   const setup = useCallback(async (options: UseDrmOptions, videoTrackConfig?: TrackConfig) => {
     if (!options.videoElement) return null;
 
-    // Get encryption keys from environment variables (DRMtoday configuration)
+    // ── Validate env keys ─────────────────────────────────────────────
     const keyIdHex = import.meta.env.VITE_DRM_KEY_ID;
     const ivHex = import.meta.env.VITE_DRM_IV;
     const merchantId = import.meta.env.VITE_DRM_MERCHANT;
 
-    // Validate keys before conversion
     if (!validateDrmKey(keyIdHex, 16)) {
       logError('[DRM] Invalid VITE_DRM_KEY_ID format: ' + keyIdHex);
     }
@@ -106,123 +87,52 @@ export function useDrm() {
       logError('[DRM] Invalid VITE_DRM_IV format: ' + ivHex);
     }
 
-    // Convert hex strings to Uint8Arrays
-    const keyId = options.keyId || hexToUint8Array(keyIdHex);
-    const iv = options.iv || hexToUint8Array(ivHex);
+    // ── DRM capability detection ──────────────────────────────────────
+    const capability = await detectDrmCapability(logDebug);
 
-    // Detect platform
-    const { isAndroid, isFirefox, platform } = detectPlatform();
-    logDebug(`Platform detected: ${platform} (isAndroid=${isAndroid}, isFirefox=${isFirefox})`);
-
-    // Detect if any DRM system supports hardware security
-    const { supported, details } = await detectHardwareSecuritySupport();
-    const detailStr = details.map(d => `${d.system}: ${d.hwSecure ? 'HW' : 'SW'}`).join(', ');
-    logDebug(`DRM hardware security check: ${detailStr}`);
-
-    if (!supported) {
-      logError(`[DRM] No DRM system supports hardware security (${detailStr})`);
-      const err = new Error('This content requires hardware-level content protection. No compatible DRM system found on your device.');
+    if (!capability.supported) {
+      logError(`[DRM] ${capability.blockReason}`);
+      const err = new Error(
+        capability.blockReason ||
+        'This content requires hardware-level content protection. No compatible DRM system found on your device.'
+      );
       err.name = WIDEVINE_L3_UNSUPPORTED;
       throw err;
     }
 
-    // Determine media buffer size based on platform
-    let mediaBufferMs = options.mediaBufferMs || -1;
-    if (isAndroid && mediaBufferMs < 600) {
-      mediaBufferMs = 1200;
-      logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Android HW robustness`);
-    } else if (isFirefox && mediaBufferMs < 900) {
-      // Firefox specifically needs 900ms to prevent stuttering (per client-sdk-changelog.md)
-      mediaBufferMs = 900;
-      logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Firefox (Firefox-specific requirement)`);
-    } else if (mediaBufferMs < 600) {
-      // Other desktop browsers using SW CDM need at least 600ms
-      mediaBufferMs = 600;
-      logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Desktop/Software DRM`);
-    }
-
-    // Encryption mode MUST match the sender
-    const encryptionMode = options.encryptionMode || 'cbcs';
-
-    // CALLBACK AUTHORIZATION MODE
-    // With Callback Authorization, we don't generate authToken client-side.
-    // DRMtoday will call our backend at /api/callback to get the CRT.
-    // We only need to pass: merchant, userId, and environment.
-    logDebug('Using Callback Authorization - backend will provide CRT');
-
-    // @ts-ignore: Accessing static properties via string index
-    const env = rtcDrmEnvironments[options.environment || 'Staging'];
-
-    const robustness: 'HW' | 'SW' = 'HW'; // Always HW — L3 devices are rejected above
-
-    const videoConfig: TrackConfig = videoTrackConfig || {
-      codec: 'H264' as const,
-      encryption: encryptionMode as 'cenc' | 'cbcs',
-      keyId: keyId,
-      iv: iv,
-      robustness: robustness
-    };
-
-    const config: DrmConfig = {
+    // ── Build config using shared module ───────────────────────────────
+    const config = buildDrmConfig({
       merchant: options.merchant || merchantId,
-      userId: options.userId || 'elidev-test',  // Required for Callback Authorization
-      environment: env,
+      userId: options.userId || 'elidev-test',
+      environmentName: options.environment || 'Staging',
       videoElement: options.videoElement,
       audioElement: options.audioElement || undefined,
-      video: videoConfig,
-      audio: { codec: 'opus' as const, encryption: 'clear' as const },
-      logLevel: 3,
-      mediaBufferMs
-    };
+      keyIdHex: keyIdHex,
+      ivHex: ivHex,
+      encryptionMode: options.encryptionMode || 'cbcs',
+      capability,
+    });
 
-    // Add DRM type based on platform for proper license request handling
-    // This is especially important for Callback Authorization
-    if (isAndroid) {
-      config.type = 'Widevine' as const;
-      logDebug('Setting DRM type to Widevine for Android');
-    } else if (isFirefox) {
-      // Firefox supports Widevine
-      config.type = 'Widevine' as const;
-      logDebug('Setting DRM type to Widevine for Firefox');
+    // Override video config if caller provided one
+    if (videoTrackConfig) {
+      config.video = videoTrackConfig;
     }
-    // Note: iOS/FairPlay detection should be added here if needed
-
-    logDebug(`DRM config: isAndroid=${isAndroid}, encryption=${encryptionMode}, robustness=${videoConfig.robustness}, mediaBufferMs=${mediaBufferMs}`);
-    logDebug(`[Callback Auth] Merchant: ${merchantId}`);
-    logDebug(`[Callback Auth] DRMtoday License Server: ${env.baseUrl()}`);
-    logDebug(`[Callback Auth] DRMtoday will call your backend at: ${import.meta.env.VITE_DRM_BACKEND_URL}/api/callback`);
-    logDebug(`[Callback Auth] UserId: ${options.userId || 'elidev-test'}`);
-    logDebug('[Callback Auth] Mode: ENABLED - Backend provides CRT (no client-side authToken)');
 
     configRef.current = config;
 
-    // Attach error listener for debugging
-    const onDrmError = (e: Event) => {
-      const errorMsg = (e as CustomEvent).detail?.message || 'Unknown DRM error';
-      logDebug(`DRM ERROR: ${errorMsg}`);
-      logError('[DRM] DRM Error Event: ' + errorMsg);
-    };
-    options.videoElement.removeEventListener('rtcdrmerror', onDrmError);
-    options.videoElement.addEventListener('rtcdrmerror', onDrmError);
-
-    // Add diagnostic video/audio element event listeners
-    const videoElement = options.videoElement;
-    const audioElement = options.audioElement;
-
-    for (const evName of ['loadedmetadata', 'loadeddata', 'canplay', 'playing', 'waiting', 'stalled', 'error', 'emptied', 'suspend']) {
-      videoElement.addEventListener(evName, () => logDebug(`video event: ${evName}`));
-      if (audioElement) {
-        audioElement.addEventListener(evName, () => logDebug(`audio event: ${evName}`));
-      }
-    }
-    videoElement.addEventListener('error', () => {
-      const e = videoElement.error;
-      logDebug(`video MediaError: code=${e?.code}, message=${e?.message}`);
+    // ── Attach event listeners ────────────────────────────────────────
+    attachDrmEventListeners(options.videoElement, options.audioElement || undefined, {
+      onDebug: logDebug,
+      onError: logError,
     });
+
+    // ── Initialize DRM ────────────────────────────────────────────────
+    logDebug('Using Callback Authorization — backend will provide CRT');
+    logDebug(`Merchant: ${config.merchant}, UserId: ${options.userId || 'elidev-test'}`);
 
     try {
       rtcDrmConfigure(config);
-      logDebug('rtcDrmConfigure succeeded - License request sent to DRMtoday, waiting for callback...');
+      logDebug('rtcDrmConfigure succeeded — license request sent to DRMtoday');
     } catch (err: any) {
       logDebug(`rtcDrmConfigure FAILED: ${err.message}`);
       console.error('[DRM-HOOK] rtcDrmConfigure failed:', err);
@@ -232,15 +142,16 @@ export function useDrm() {
     return config;
   }, []);
 
+  /**
+   * Handle an incoming RTC track event.
+   * Delegates to rtcDrmOnTrack and attempts playback.
+   */
   const handleTrack = useCallback((event: RTCTrackEvent) => {
     logDebug(`Track received: ${event.track.kind}`);
     if (configRef.current) {
       try {
-        // Call rtcDrmOnTrack without config arg — single-stream mode, matches whep behavior.
-        // The library uses the config stored internally from rtcDrmConfigure.
         rtcDrmOnTrack(event);
 
-        // After the DRM library processes the track, try to start playback
         const videoElement = configRef.current.videoElement;
         const audioElement = configRef.current.audioElement;
 
@@ -250,7 +161,6 @@ export function useDrm() {
             playPromise
               .then(() => logDebug('videoElement.play() resolved'))
               .catch(err => {
-                // Only log non-abort errors  
                 if (err.name !== 'AbortError') {
                   logDebug(`videoElement.play() rejected: ${err.message}`);
                 }
@@ -279,6 +189,6 @@ export function useDrm() {
   return {
     setup,
     handleTrack,
-    config: configRef.current
+    config: configRef.current,
   };
 }
