@@ -162,30 +162,12 @@ function buildCallbackResponse(callbackPayload, options = {}) {
   const { drmScheme, clientInfo } = callbackPayload;
 
   // -----------------------------------------------------------------------
-  // Output protection: adjust enforcement based on DRM scheme + security level.
-  //
-  // For Widevine L3 (software-only), HDCP may not be available, so we
-  // relax enforcement. For L1 (hardware), we can enforce.
+  // Output protection: always enabled with all values set to true
   // -----------------------------------------------------------------------
-  let enforceOutputProtection = enforce;
-
-  if (drmScheme === DRM_SCHEMES.WIDEVINE_MODULAR && clientInfo) {
-    // secLevel can be a number (3) or string ('L3', 'SW_SECURE_CRYPTO')
-    const secLevel = String(clientInfo.secLevel || '').toUpperCase();
-    // Widevine L3 / SW_SECURE_CRYPTO = software only, can't enforce HDCP
-    if (secLevel === 'L3' || secLevel === 'SW_SECURE_CRYPTO' || secLevel === '3') {
-      enforceOutputProtection = false;
-      logger.debug('Widevine L3 detected — disabling output protection enforcement', {
-        secLevel: clientInfo.secLevel,
-        user: callbackPayload.user,
-      });
-    }
-  }
-
   const outputProtection = {
     digital: true,
     analogue: true,
-    enforce: enforceOutputProtection,
+    enforce: true,
   };
 
   let crt;

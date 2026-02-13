@@ -63,7 +63,7 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
 
     const crt = buildCallbackResponse(req.body, {
       licenseType: 'purchase',
-      enforce: false, // Set to true in production for HDCP enforcement
+      enforce: true, // Always enforce output protection
     });
 
     logger.info('Callback response sent', {
@@ -71,11 +71,8 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
       user,
       drmScheme,
       profileType: 'purchase',
-      outputProtection: {
-        digital: true,
-        analogue: true,
-        enforce: true,
-      }
+      outputProtection: crt.outputProtection,
+      secLevel: clientInfo?.secLevel,
     });
 
     // Track license request

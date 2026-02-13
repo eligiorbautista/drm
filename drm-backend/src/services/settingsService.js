@@ -54,7 +54,7 @@ const DEFAULT_SETTINGS = {
   },
   'drm.outputProtection.enforce': {
     key: 'drm.outputProtection.enforce',
-    value: 'false',
+    value: 'true',
     valueType: 'BOOLEAN',
     category: 'drm',
     description: 'Enforce output protection',
