@@ -3,7 +3,7 @@ const router = express.Router();
 const prisma = require('../lib/prisma');
 const logger = require('../middleware/logger');
 const { validateCallbackRequest } = require('../middleware/validateCallback');
-const { buildCallbackResponse } = require('../services/crtService');
+const { buildCallbackResponse, buildTemplateCrt } = require('../services/crtService');
 const { DRM_SCHEMES } = require('../utils/constants');
 
 /**
@@ -58,13 +58,154 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
     //       return res.status(403).json({ error: 'Insufficient DRM security level' });
     //     }
     //
-    // For now, we authorize all requests with a purchase profile.
     // -----------------------------------------------------------------------
 
-    const crt = buildCallbackResponse(req.body, {
-      licenseType: 'purchase',
-      enforce: false, // Don't enforce output protection for software CDMs
-    });
+    // Determine whether to enforce output protection based on DRM scheme and security level
+    // We use CRT templates with selective overrides to enable proper HDCP enforcement
+    // See docs/crt_selective_overrides.md for details on Enhanced Output Protection
+    const secLevel = parseInt(clientInfo?.secLevel, 10);
+
+    // TEMPLATE APPROACH (Recommended for Production)
+    // ------------------------------------------------
+    // To use CRT templates, set USE_TEMPLATES=true and update TEMPLATE_IDS
+    // with your actual template IDs from the DRMtoday dashboard.
+    //
+    // See: docs/crt_template_setup_guide.md
+    // ------------------------------------------------
+
+    const USE_TEMPLATES = false; // Set to true after creating templates in DRMtoday dashboard
+
+    // CRT Template IDs (must be created in DRMtoday dashboard)
+    // These templates use Enhanced Output Protection with requireHDCP settings
+    // and can work with all DRM schemes including Widevine L3, PlayReady, FairPlay
+    const TEMPLATE_IDS = {
+      // Hardware-secure devices (Widevine L1) - strict HDCP enforcement
+      HARDWARE_SECURE: 'template-hardware-secure',  // Set this ID in DRMtoday dashboard
+
+      // Software CDMs (Widevine L3, PlayReady, FairPlay) - no HDCP requirement
+      // Use HDCP_NONE so license is granted even without HDCP support
+      SOFTWARE_CDM: 'template-software-cdm',        // Set this ID in DRMtoday dashboard
+
+      // Default fallback template
+      DEFAULT: 'template-default-crt',              // Set this ID in DRMtoday dashboard
+    };
+
+    let crt;
+
+    if (USE_TEMPLATES) {
+      // Use templates with Enhanced Output Protection
+      let templateId;
+
+      // Widevine DRM (used by Chrome, Firefox, Edge, Android)
+      // secLevel 1 = L1 (hardware, secure, HDCP-capable)
+      // secLevel 3 = L3 (software) - can use HDCP_NONE for SD, HDCP_V1 for HD with proper template
+      if (drmScheme === 'WIDEVINE_MODULAR') {
+        if (secLevel === 1) {
+          templateId = TEMPLATE_IDS.HARDWARE_SECURE;
+          logger.info('Hardware-secure Widevine L1 detected - using strict HDCP template', { secLevel, templateId });
+        } else {
+          templateId = TEMPLATE_IDS.SOFTWARE_CDM;
+          logger.info('Widevine L3 or software CDM detected - using no-HDCP template', { secLevel, templateId });
+        }
+      }
+      // PlayReady DRM (used by Edge, Internet Explorer on Windows)
+      // Use template with HDCP_NONE - can enable HDCP via template overrides if device supports it
+      else if (drmScheme === 'PLAYREADY') {
+        templateId = TEMPLATE_IDS.SOFTWARE_CDM;
+        logger.info('PlayReady detected - using software CDM template', { secLevel, templateId });
+      }
+      // FairPlay DRM (used by Safari on iOS/macOS)
+      // Web Safari: use HDCP_NONE template
+      // Native apps with hardware FairPlay: could use a separate template
+      else if (drmScheme === 'FAIRPLAY') {
+        templateId = TEMPLATE_IDS.SOFTWARE_CDM;
+        logger.info('FairPlay detected - using software CDM template', { secLevel, templateId });
+      }
+      // Other DRM schemes (OMADRM, WISEPLAY, etc.)
+      else {
+        templateId = TEMPLATE_IDS.DEFAULT;
+        logger.info('Other DRM scheme detected - using default template', { drmScheme, secLevel, templateId });
+      }
+
+      // Build CRT response using template reference
+      crt = buildTemplateCrt(templateId, asset);
+
+      logger.info('Using CRT Template with Enhanced Output Protection', {
+        asset,
+        user,
+        drmScheme,
+        secLevel,
+        templateId,
+        profileType: 'template',
+      });
+    } else {
+      // INLINE APPROACH (Immediate solution, no dashboard setup needed)
+      // ------------------------------------------------
+      // Uses Enhanced Output Protection (op.config) inline
+      // Works with Widevine L3, PlayReady, FairPlay via requireHDCP = HDCP_NONE
+      // ------------------------------------------------
+
+      // Determine DRM-specific configuration (e.g., WidevineM, PlayReadyM, FairPlayM)
+      let drmModuleKey = '*'; // Default to wildcard for all DRM schemes
+
+      if (drmScheme === 'WIDEVINE_MODULAR') {
+        drmModuleKey = 'WidevineM';
+      } else if (drmScheme === 'PLAYREADY') {
+        drmModuleKey = 'PlayReadyM';
+      } else if (drmScheme === 'FAIRPLAY') {
+        drmModuleKey = 'FairPlayM';
+      }
+
+      // Build Enhanced Output Protection config
+      // HDCP_NONE = No HDCP required (works with software CDMs)
+      // This allows licenses to be granted even without HDCP support
+      const enhanceOutputProtection = {
+        op: {
+          config: {
+            UHD: {
+              [drmModuleKey]: {
+                requireHDCP: 'HDCP_NONE',  // No HDCP required for software CDMs
+              }
+            },
+            HD: {
+              [drmModuleKey]: {
+                requireHDCP: 'HDCP_NONE'
+              }
+            },
+            SD: {
+              [drmModuleKey]: {
+                requireHDCP: 'HDCP_NONE'
+              }
+            },
+            AUDIO: {
+              [drmModuleKey]: {
+                requireHDCP: 'HDCP_NONE'
+              }
+            }
+          }
+        }
+      };
+
+      // Build CRT with Enhanced Output Protection
+      crt = {
+        profile: {
+          purchase: {}
+        },
+        assetId: asset,
+        ...enhanceOutputProtection
+      };
+
+      logger.info('Using inline Enhanced Output Protection', {
+        asset,
+        user,
+        drmScheme,
+        secLevel,
+        drmModuleKey,
+        requireHDCP: 'HDCP_NONE',
+        profileType: 'purchase',
+        note: 'Set USE_TEMPLATES=true to use CRT templates for production'
+      });
+    }
 
     logger.info('Callback response sent', {
       asset,

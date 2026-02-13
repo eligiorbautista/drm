@@ -162,12 +162,12 @@ function buildCallbackResponse(callbackPayload, options = {}) {
   const { drmScheme, clientInfo } = callbackPayload;
 
   // -----------------------------------------------------------------------
-  // Output protection: always enabled with all values set to true
+  // Output protection: use the enforce parameter from caller
   // -----------------------------------------------------------------------
   const outputProtection = {
     digital: true,
     analogue: true,
-    enforce: true,
+    enforce: enforce,
   };
 
   let crt;
@@ -188,7 +188,7 @@ function buildCallbackResponse(callbackPayload, options = {}) {
     drmScheme,
     secLevel: clientInfo?.secLevel,
     licenseType,
-    enforce: enforceOutputProtection,
+    enforce: enforce,
   });
 
   return crt;
