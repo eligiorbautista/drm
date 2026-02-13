@@ -16,9 +16,12 @@ export interface PlayerProps {
 const DEBUG_PANEL_ID = 'player-debug';
 
 /**
- * Check if Encrypted Media Extensions (EME) are available.
+ * Checks if Encrypted Media Extensions (EME) are available in the browser.
  * In cross-origin iframes, EME is blocked unless the parent <iframe> element
  * includes allow="encrypted-media" in its attributes.
+ *
+ * @param logDebug - Function to log debug messages
+ * @returns Promise resolving to EME availability and reason if unavailable
  */
 function checkEmeAvailability(logDebug: (msg: string) => void): Promise<{ available: boolean; reason?: string }> {
   const isInIframe = window.self !== window.top;
@@ -63,57 +66,58 @@ function checkEmeAvailability(logDebug: (msg: string) => void): Promise<{ availa
 }
 
 export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encrypted, isEmbedMode = false, onOpenEmbed }) => {
-  console.log('Player Props Endpoint:', endpoint);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const { isConnected, isConnecting, error, connect, disconnect } = useWhep();
   
-  // Auto-unmute in embed mode for seamless playback - MUTE by default for mobile autoplay
-  const [isMuted, setIsMuted] = useState(isEmbedMode ? true : true);
+  // Always start muted for autoplay compatibility
+  const [isMuted, setIsMuted] = useState(true);
   const [drmError, setDrmError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
 
+  // --- Logging helpers ---
   // In embed mode, disable all logging for security and clean output
-  const broadcastDebugEvent = isEmbedMode ? () => {} : (detail: { id: string; level: 'info' | 'error' | 'warning'; message: string }) => {
-    const event = new CustomEvent('debug-log', {
-      detail: {
-        ...detail,
-        timestamp: new Date().toLocaleTimeString()
-      } as any
-    }) as any;
-    window.dispatchEvent(event);
-  };
+  const broadcastDebugEvent = isEmbedMode
+    ? () => {}
+    : (detail: { id: string; level: 'info' | 'error' | 'warning'; message: string }) => {
+        window.dispatchEvent(
+          new CustomEvent('debug-log', {
+            detail: { ...detail, timestamp: new Date().toLocaleTimeString() },
+          })
+        );
+      };
 
-  const logDebug = isEmbedMode ? () => {} : (...args: any[]) => {
-    console.log(...args);
-    const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
-    broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'info', message });
-  };
+  const logDebug = isEmbedMode
+    ? () => {}
+    : (...args: any[]) => {
+        const message = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
+        broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'info', message });
+      };
 
-  const logError = isEmbedMode ? () => {} : (...args: any[]) => {
-    console.error(...args);
-    const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
-    broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'error', message });
-  };
+  const logError = isEmbedMode
+    ? () => {}
+    : (...args: any[]) => {
+        const message = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
+        broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'error', message });
+      };
 
-  const logWarning = isEmbedMode ? () => {} : (...args: any[]) => {
-    console.warn(...args);
-    const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
-    broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'warning', message });
-  };
+  const logWarning = isEmbedMode
+    ? () => {}
+    : (...args: any[]) => {
+        const message = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
+        broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'warning', message });
+      };
 
+  // --- Sync mute state to video/audio elements ---
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.muted = isMuted;
-    }
-    if (audioRef.current) {
-      audioRef.current.muted = isMuted;
-    }
+    if (videoRef.current) videoRef.current.muted = isMuted;
+    if (audioRef.current) audioRef.current.muted = isMuted;
   }, [isMuted]);
 
+  // --- Fullscreen handling ---
   // Toggle fullscreen mode using Fullscreen API with CSS fallback for iframe compatibility
   const toggleFullscreen = async () => {
     if (!videoContainerRef.current) return;
@@ -143,13 +147,11 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // Auto-connect and auto-fullscreen if in embed mode (for iframe embedding)
+  // --- Auto-connect and fullscreen for embed mode ---
   useEffect(() => {
     if (isEmbedMode) {
-      console.log('[Player] Auto-connecting and entering fullscreen mode...', { isEmbedMode, endpoint });
       // Small delay to ensure component is mounted
       const timer = setTimeout(() => {
-        console.log('[Player] Calling handleConnect...');
         handleConnect();
         setIsFullscreen(true); // Auto-enter fullscreen
       }, 200);
@@ -157,7 +159,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
   }, [endpoint]);
 
-  // Watch for connection state changes and ensure stream is assigned to video element
+  // --- Ensure video is playing when connected ---
   useEffect(() => {
     if (isConnected && videoRef.current) {
       console.log('[Player] Connected - ensuring video is playing');
@@ -194,50 +196,29 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
   }, [isConnected]);
 
-  // Track when video is actually playing
+  // --- Track when video is actually playing ---
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    const handlePlaying = () => {
-      console.log('[Player] Video is now playing');
-      setIsPlaying(true);
-    };
+    const setPlayState = (playing: boolean) => setIsPlaying(playing);
 
-    const handlePause = () => {
-      console.log('[Player] Video paused');
-      setIsPlaying(false);
-    };
+    video.addEventListener('playing', () => setPlayState(true));
+    video.addEventListener('pause', () => setPlayState(false));
+    video.addEventListener('waiting', () => setPlayState(false));
+    video.addEventListener('ended', () => setPlayState(false));
 
-    const handleWaiting = () => {
-      console.log('[Player] Video waiting for data');
-      setIsPlaying(false);
-    };
-
-    const handleEnded = () => {
-      console.log('[Player] Video ended');
-      setIsPlaying(false);
-    };
-
-    video.addEventListener('playing', handlePlaying);
-    video.addEventListener('pause', handlePause);
-    video.addEventListener('waiting', handleWaiting);
-    video.addEventListener('ended', handleEnded);
-
-    // Reset playing state when disconnected
-    if (!isConnected) {
-      setIsPlaying(false);
-    }
+    if (!isConnected) setIsPlaying(false);
 
     return () => {
-      video.removeEventListener('playing', handlePlaying);
-      video.removeEventListener('pause', handlePause);
-      video.removeEventListener('waiting', handleWaiting);
-      video.removeEventListener('ended', handleEnded);
+      video.removeEventListener('playing', () => setPlayState(true));
+      video.removeEventListener('pause', () => setPlayState(false));
+      video.removeEventListener('waiting', () => setPlayState(false));
+      video.removeEventListener('ended', () => setPlayState(false));
     };
   }, [isConnected]);
 
-  // Extra monitoring for embed mode - ensure video stays playing
+  // --- Extra monitoring for embed mode: ensure video stays playing ---
   useEffect(() => {
     if (!isEmbedMode || !isConnected) return;
     
@@ -288,6 +269,11 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     return () => clearInterval(checkVideo);
   }, [isConnected, isEmbedMode]);
 
+  /**
+   * Configures DRM for the peer connection.
+   * Handles platform detection, DRM config, and event listeners.
+   * @param pc - RTCPeerConnection instance
+   */
   const configureDrm = async (pc: RTCPeerConnection) => {
     // Early check: verify EME is available (catches iframe permission issues)
     if (encrypted) {
@@ -357,31 +343,12 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, isAndroid=${isAndroid}, isFirefox=${isFirefox}, isIOS=${isIOS}, isSafari=${isSafari}, isChrome=${isChrome}, isEdge=${isEdge}, uaHasMobile=${uaHasMobile}`);
     logDebug(`Detected platform: ${detectedPlatform} (FairPlay: ${isIOS || isSafari})`);
 
-    const params = new URLSearchParams(window.location.search);
-    const robustnessOverride = params.get('robustness')?.toUpperCase();
+    // URLSearchParams for robustness override is no longer needed
+    // Robustness override is no longer supported; only HW is used
 
-    let androidRobustness = 'SW';
-    if (isAndroid) {
-      try {
-        await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
-          initDataTypes: ['cenc'],
-          videoCapabilities: [{
-            contentType: 'video/mp4; codecs="avc1.42E01E"',
-            robustness: 'HW_SECURE_ALL'
-          }]
-        }]);
-        androidRobustness = 'HW';
-        logDebug('Widevine L1 (HW_SECURE_ALL) is supported on this device');
-      } catch {
-        logDebug('Widevine L1 (HW) NOT supported — falling back to SW');
-        androidRobustness = 'SW';
-      }
-    }
-
-    if (robustnessOverride === 'HW' || robustnessOverride === 'SW') {
-      androidRobustness = robustnessOverride;
-      logDebug(`Robustness overridden via URL param: ${robustnessOverride}`);
-    }
+    let androidRobustness = 'HW';
+    // Only HW robustness is supported; no override or SW fallback
+    // All platforms will use HW robustness for DRM
 
     // Media buffer sizing:
     // - Android HW (Widevine L1) needs at least 1200ms
@@ -396,9 +363,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       mediaBufferMs = 900;
       logDebug(`Set mediaBufferMs=900 for Firefox (Firefox-specific requirement)`);
     } else if (mediaBufferMs < 600) {
-      // Apply 600ms buffer for Software CDMs (Chrome SW, Edge SW on Mac/Linux/Windows, etc.)
+      // Default to 600ms for other platforms
       mediaBufferMs = 600;
-      logDebug(`Set mediaBufferMs=600 for Software DRM/Desktop browsers`);
+      logDebug(`Set mediaBufferMs=600 for other platforms`);
     }
 
     // iOS/FairPlay handling:
@@ -411,22 +378,24 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       videoConfig = {
         codec: 'H264' as const,
         encryption: 'cbcs' as const,
-        robustness: 'SW' as const, // iOS FairPlay doesn't support robustness param
-        iv  // iv is REQUIRED for FairPlay
+        // iOS FairPlay doesn't support robustness param, so omit it
+        iv, // iv is REQUIRED for FairPlay
+        requireHDCP: 'HDCP_v1' as const,
         // Note: keyId is often omitted for FairPlay as it's extracted from SKD URL
         // Only include keyId if specifically needed for this stream
       };
       logDebug('iOS/FairPlay detected - using iv (keyId handled by FairPlay SKD URL)');
     } else {
-      // Other platforms (Android, Windows, Firefox, macOS Safari, etc.)
+      // All other platforms: enforce HW robustness only
       videoConfig = {
         codec: 'H264' as const,
         encryption: 'cbcs' as const,
-        robustness: (isAndroid ? androidRobustness : 'SW') as 'HW' | 'SW',
+        robustness: 'HW' as const,
         keyId,  // Widevine/PlayReady require explicit keyId
-        iv   // iv is also used by other DRM systems
+        iv,   // iv is also used by other DRM systems
+        requireHDCP: 'HDCP_v1' as const,
       };
-      logDebug(`${detectedPlatform} detected - using explicit keyId and iv`);
+      logDebug(`${detectedPlatform} detected - using explicit keyId, iv, HW robustness, and HDCP_v1`);
     }
 
     // CALLBACK AUTHORIZATION MODE
@@ -662,8 +631,10 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     });
   };
 
+  /**
+   * Initiates connection to the stream, optionally with DRM configuration.
+   */
   const handleConnect = async () => {
-    console.log('[Player] handleConnect called, encrypted:', encrypted, 'isEmbedMode:', isEmbedMode);
     await connect({
       endpoint,
       encrypted,
@@ -673,6 +644,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
 
 
 
+  /**
+   * Toggles mute state for both video and audio elements.
+   */
   const toggleMute = () => {
     if (videoRef.current) {
       videoRef.current.muted = !isMuted;
