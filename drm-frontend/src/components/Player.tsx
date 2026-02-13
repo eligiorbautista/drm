@@ -545,18 +545,24 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       const msg = event.detail?.message || 'Unknown DRM error';
       logDebug(`DRM ERROR: ${msg}`);
 
-      // output-restricted / output-downscaled are non-fatal in many cases —
-      // the CDM may still allow playback. Only show a fatal overlay for errors
-      // that truly block decryption (e.g. expired, internal-error, not-allowed).
-      const isOutputIssue = msg.includes('output-restricted') ||
+      // Non-fatal DRM events that should be treated as warnings, not errors:
+      //
+      // 1. output-restricted/downscaled: CDM may still allow playback
+      // 2. requestMediaKeySystemAccess failures: the DRM library probes multiple
+      //    CDMs internally (Widevine, PlayReady, FairPlay). A failure for ONE CDM
+      //    is expected if the device uses a different CDM (e.g. Windows with
+      //    Widevine L3 will fail `com.widevine.alpha.experiment` but then succeed
+      //    with PlayReady). These are NOT fatal errors.
+      // 3. "not usable for decryption": transient key status, often non-fatal
+      const isNonFatal = msg.includes('output-restricted') ||
         msg.includes('output-downscaled') ||
         msg.includes('status: output-restricted') ||
-        msg.includes('not usable for decryption');
-      if (isOutputIssue) {
-        logDebug('[DRM] output-restricted/downscaled detected — treating as warning, not fatal');
+        msg.includes('not usable for decryption') ||
+        msg.includes('requestMediaKeySystemAccess');
+      if (isNonFatal) {
+        logDebug(`[DRM] Non-fatal DRM event — treating as warning: ${msg}`);
         console.warn('[DRM]', msg);
-        console.warn('[DRM] This is expected on Windows/Android L3 (software DRM) - playback should continue');
-        return; // don't block the UI
+        return; // don't block the UI — let the library try other CDMs
       }
 
       const isInIframe = window.self !== window.top;
