@@ -4,7 +4,7 @@ const prisma = require('../lib/prisma');
 const logger = require('../middleware/logger');
 const { validateCallbackRequest } = require('../middleware/validateCallback');
 const { buildCallbackResponse, buildTemplateCrt } = require('../services/crtService');
-const { DRM_SCHEMES } = require('../utils/constants');
+const { env } = require('../config/env');
 
 /**
  * POST /api/callback
@@ -14,140 +14,49 @@ const { DRM_SCHEMES } = require('../utils/constants');
  * This is the PRIMARY authorization method for production. DRMtoday sends a
  * JSON POST to this URL whenever a client requests a license. We respond with
  * a valid Customer Rights Token (CRT) that tells DRMtoday what license to issue.
- *
- * Flow:
- *   1. Client calls rtcDrmConfigure() with merchant + userId (no authToken needed)
- *   2. Client requests a license → DRMtoday receives it
- *   3. DRMtoday POSTs to this endpoint with:
- *        { asset, variant, user, session, client, drmScheme, clientInfo, requestMetadata }
- *   4. We respond with a CRT → DRMtoday issues the license to the client
- *
- * DRM Scheme values from DRMtoday:
- *   FAIRPLAY, WIDEVINE_MODULAR, PLAYREADY, OMADRM, WISEPLAY
- *
- * See: docs/license_delivery_authorization.md (Callback Authorization section)
  */
 router.post('/', validateCallbackRequest, async (req, res, next) => {
   try {
     const { asset, variant, user, session, client, drmScheme, clientInfo, requestMetadata } = req.body;
 
+    // Handle asset being an array or string (DRMtoday may send either)
+    const normalizedAssetId = Array.isArray(asset) ? asset[0] : (asset || env.DEFAULT_ASSET_ID);
+
     logger.info('DRMtoday callback received', {
-      asset,
-      variant,
+      asset: normalizedAssetId,
+      originalAsset: asset,
       user,
       session,
-      client,
       drmScheme,
       secLevel: clientInfo?.secLevel,
-      manufacturer: clientInfo?.manufacturer,
-      remoteAddr: requestMetadata?.remoteAddr,
     });
-
-    // -----------------------------------------------------------------------
-    // AUTHORIZATION LOGIC
-    //
-    // This is where you implement your business rules. Examples:
-    //   - Look up user in your database to verify active subscription
-    //   - Check if user is authorized for this specific asset
-    //   - Enforce device limits or concurrent stream limits
-    //   - Apply geo-restrictions based on requestMetadata.remoteAddr
-    //   - Deny low security levels for premium content:
-    //
-    //     if (drmScheme === 'WIDEVINE_MODULAR' && clientInfo?.secLevel === '3') {
-    //       logger.warn('Denied Widevine L3 for premium content', { user, asset });
-    //       return res.status(403).json({ error: 'Insufficient DRM security level' });
-    //     }
-    //
-    // -----------------------------------------------------------------------
-
-    // Determine whether to enforce output protection based on DRM scheme and security level
-    // We use CRT templates with selective overrides to enable proper HDCP enforcement
-    // See docs/crt_selective_overrides.md for details on Enhanced Output Protection
-    const secLevel = parseInt(clientInfo?.secLevel, 10);
-
-    // TEMPLATE APPROACH (Recommended for Production)
-    // ------------------------------------------------
-    // To use CRT templates, set USE_TEMPLATES=true and update TEMPLATE_IDS
-    // with your actual template IDs from the DRMtoday dashboard.
-    //
-    // See: docs/crt_template_setup_guide.md
-    // ------------------------------------------------
 
     const USE_TEMPLATES = false; // Set to true after creating templates in DRMtoday dashboard
 
-    // CRT Template IDs (must be created in DRMtoday dashboard)
-    // These templates use Enhanced Output Protection with requireHDCP settings
-    // and can work with all DRM schemes including Widevine L3, PlayReady, FairPlay
     const TEMPLATE_IDS = {
-      // Hardware-secure devices (Widevine L1) - strict HDCP enforcement
-      HARDWARE_SECURE: 'template-hardware-secure',  // Set this ID in DRMtoday dashboard
-
-      // Software CDMs (Widevine L3, PlayReady, FairPlay) - no HDCP requirement
-      // Use HDCP_NONE so license is granted even without HDCP support
-      SOFTWARE_CDM: 'template-software-cdm',        // Set this ID in DRMtoday dashboard
-
-      // Default fallback template
-      DEFAULT: 'template-default-crt',              // Set this ID in DRMtoday dashboard
+      HARDWARE_SECURE: 'template-hardware-secure',
+      SOFTWARE_CDM: 'template-software-cdm',
+      DEFAULT: 'template-default-crt',
     };
 
     let crt;
 
     if (USE_TEMPLATES) {
-      // Use templates with Enhanced Output Protection
       let templateId;
+      const secLevel = parseInt(clientInfo?.secLevel, 10);
 
-      // Widevine DRM (used by Chrome, Firefox, Edge, Android)
-      // secLevel 1 = L1 (hardware, secure, HDCP-capable)
-      // secLevel 3 = L3 (software) - can use HDCP_NONE for SD, HDCP_V1 for HD with proper template
       if (drmScheme === 'WIDEVINE_MODULAR' || drmScheme === 'WIDEVINE') {
-        if (secLevel === 1) {
-          templateId = TEMPLATE_IDS.HARDWARE_SECURE;
-          logger.info('Hardware-secure Widevine L1 detected - using strict HDCP template', { secLevel, templateId });
-        } else {
-          templateId = TEMPLATE_IDS.SOFTWARE_CDM;
-          logger.info('Widevine L3 or software CDM detected - using no-HDCP template', { secLevel, templateId });
-        }
-      }
-      // PlayReady DRM (used by Edge, Internet Explorer on Windows)
-      // Use template with HDCP_NONE - can enable HDCP via template overrides if device supports it
-      else if (drmScheme === 'PLAYREADY') {
+        templateId = (secLevel === 1) ? TEMPLATE_IDS.HARDWARE_SECURE : TEMPLATE_IDS.SOFTWARE_CDM;
+      } else if (drmScheme === 'PLAYREADY' || drmScheme === 'FAIRPLAY') {
         templateId = TEMPLATE_IDS.SOFTWARE_CDM;
-        logger.info('PlayReady detected - using software CDM template', { secLevel, templateId });
-      }
-      // FairPlay DRM (used by Safari on iOS/macOS)
-      // Web Safari: use HDCP_NONE template
-      // Native apps with hardware FairPlay: could use a separate template
-      else if (drmScheme === 'FAIRPLAY') {
-        templateId = TEMPLATE_IDS.SOFTWARE_CDM;
-        logger.info('FairPlay detected - using software CDM template', { secLevel, templateId });
-      }
-      // Other DRM schemes (OMADRM, WISEPLAY, etc.)
-      else {
+      } else {
         templateId = TEMPLATE_IDS.DEFAULT;
-        logger.info('Other DRM scheme detected - using default template', { drmScheme, secLevel, templateId });
       }
 
-      // Build CRT response using template reference
-      crt = buildTemplateCrt(templateId, asset);
-
-      logger.info('Using CRT Template with Enhanced Output Protection', {
-        asset,
-        user,
-        drmScheme,
-        secLevel,
-        templateId,
-        profileType: 'template',
-      });
+      crt = buildTemplateCrt(templateId, normalizedAssetId);
     } else {
-      // INLINE APPROACH (Immediate solution, no dashboard setup needed)
-      // ------------------------------------------------
-      // Uses Enhanced Output Protection (op.config) inline
-      // Works with Widevine L3, PlayReady, FairPlay via requireHDCP = HDCP_NONE
-      // ------------------------------------------------
-
-      // Determine DRM-specific configuration (e.g., WidevineM, PlayReadyM, FairPlayM)
-      let drmModuleKey = '*'; // Default to wildcard for all DRM schemes
-
+      // Determine DRM module key for op.config
+      let drmModuleKey = '*';
       if (drmScheme === 'WIDEVINE_MODULAR' || drmScheme === 'WIDEVINE') {
         drmModuleKey = 'WidevineM';
       } else if (drmScheme === 'PLAYREADY') {
@@ -156,10 +65,20 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
         drmModuleKey = 'FairPlayM';
       }
 
-      // Build Enhanced Output Protection config
-      // HDCP_NONE = No HDCP required (works with software CDMs)
-      // This allows licenses to be granted even without HDCP support
-      const enhanceOutputProtection = {
+      // EXPLICIT MODERN CRT STRUCTURE
+      // We provide both legacy 'profile' and modern 'type' for maximum compatibility
+      // across different DRMtoday callback versions (JSON_V1 vs JSON_V2)
+      crt = {
+        type: 'purchase',
+        profile: { type: 'purchase' }, // Redundancy for older schemas
+        assetId: normalizedAssetId,
+        storeLicense: true,
+        outputProtection: {
+          digital: true,
+          analogue: true,
+          enforce: false // Set to false to allow Enhanced Output Protection (op) to take precedence
+        },
+        // Enhanced Output Protection config
         op: {
           config: {
             UHD: { [drmModuleKey]: { requireHDCP: 'HDCP_NONE' } },
@@ -169,100 +88,55 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
           }
         }
       };
-
-      // Build CRT using the service for consistency
-      // Fallback to DEFAULT_ASSET_ID if asset is missing from callback
-      const targetAssetId = asset || env.DEFAULT_ASSET_ID;
-      
-      crt = buildPurchaseCrt(targetAssetId, {
-        outputProtection: {
-          digital: true,
-          analogue: true,
-          enforce: false
-        }
-      });
-
-      // Merge Enhanced Output Protection into CRT
-      Object.assign(crt, enhanceOutputProtection);
-
-      logger.info('Using inline Enhanced Output Protection (Modern CRT)', {
-        asset: targetAssetId,
-        user,
-        drmScheme,
-        secLevel,
-        drmModuleKey,
-        requireHDCP: 'HDCP_NONE',
-        profileType: 'purchase',
-        note: 'Set USE_TEMPLATES=true to use CRT templates for production'
-      });
     }
 
     logger.info('Callback response sent', {
-      asset,
+      asset: normalizedAssetId,
       user,
       drmScheme,
-      profileType: 'purchase',
-      outputProtection: crt.outputProtection,
-      secLevel: clientInfo?.secLevel,
+      status: 'granted'
     });
 
-    // Track license request
+    // Track license request in database
     try {
       await prisma.licenseRequest.create({
         data: {
-          assetId: asset,
-          variant,
-          session,
+          assetId: normalizedAssetId,
+          variant: variant?.toString(),
+          session: session?.toString(),
           drmScheme,
           securityLevel: clientInfo?.secLevel?.toString(),
           clientInfo,
           granted: true,
           ipAddress: requestMetadata?.remoteAddr,
           userAgent: requestMetadata?.userAgent,
+          userId: null // Optional: link to internal user record if 'user' param matches user.id/email
         },
       });
     } catch (error) {
-      logger.warn('Failed to create license request record', { error: error.message });
+      logger.warn('Failed to record license request', { error: error.message });
     }
 
     res.json(crt);
   } catch (err) {
+    logger.error('Callback processing failed', { error: err.message });
     next(err);
   }
 });
 
 /**
  * POST /api/callback/rental
- *
- * Callback endpoint that returns a rental CRT with time-limited license.
- * Configure a separate callback URL in DRMtoday for rental content,
- * or use the main callback with asset-based routing logic.
  */
 router.post('/rental', validateCallbackRequest, async (req, res, next) => {
   try {
-    const { asset, user, drmScheme, clientInfo, requestMetadata } = req.body;
-
-    logger.info('DRMtoday rental callback received', {
-      asset,
-      user,
-      drmScheme,
-      secLevel: clientInfo?.secLevel,
-      manufacturer: clientInfo?.manufacturer,
-      remoteAddr: requestMetadata?.remoteAddr,
-    });
+    const { asset, user, drmScheme } = req.body;
+    const normalizedAssetId = Array.isArray(asset) ? asset[0] : (asset || env.DEFAULT_ASSET_ID);
 
     const crt = buildCallbackResponse(req.body, {
       licenseType: 'rental',
       relativeExpiration: 'PT24H',
       playDuration: 'PT4H',
       enforce: false,
-    });
-
-    logger.info('Rental callback response sent', {
-      asset,
-      user,
-      drmScheme,
-      licenseType: 'rental',
     });
 
     res.json(crt);
@@ -273,25 +147,12 @@ router.post('/rental', validateCallbackRequest, async (req, res, next) => {
 
 /**
  * POST /api/callback/error
- *
- * Callback endpoint for handling failed license requests from DRMtoday.
  */
 router.post('/error', validateCallbackRequest, async (req, res, next) => {
   try {
-    const { asset, user, drmScheme, clientInfo, requestMetadata, error } = req.body;
-
-    logger.warn('DRMtoday error callback received', {
-      asset,
-      user,
-      drmScheme,
-      error,
-      remoteAddr: requestMetadata?.remoteAddr,
-    });
-
-    res.status(403).json({
-      error: 'License request denied',
-      message: error?.message || 'Unknown error',
-    });
+    const { asset, user, error } = req.body;
+    logger.warn('DRMtoday error callback received', { asset, user, error });
+    res.status(403).json({ error: 'Denied', message: error?.message });
   } catch (err) {
     next(err);
   }
