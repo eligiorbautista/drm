@@ -118,7 +118,14 @@ export function useWhep() {
           // Ensure video is playing after connection (both DRM and non-DRM)
           if (videoElement) {
             console.log('[WHEP] Connection established, ensuring video is playing');
-            videoElement.play().then(() => {
+            videoElement.play().catch((e) => {
+              if (e.name === 'NotAllowedError') {
+                console.warn('[WHEP] Autoplay blocked, muting and retrying...');
+                videoElement.muted = true;
+                return videoElement.play();
+              }
+              throw e;
+            }).then(() => {
               console.log('[WHEP] video.play() succeeded');
             }).catch((e) =>
               console.warn('[WHEP] video.play() rejected:', e.name, e.message)

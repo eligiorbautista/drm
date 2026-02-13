@@ -611,27 +611,31 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         const retryPlay = async (element: HTMLMediaElement, elementName: string, maxRetries = 3) => {
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-              // Unmute before playing (browser requirement for autoplay)
-              if (element.muted) {
-                element.muted = false;
-                logDebug(`${elementName}: Unmuting before play()`);
-              }
-              
               await element.play();
               logDebug(`${elementName}: play() succeeded on attempt ${attempt}`);
               return true;
             } catch (err: any) {
-              logDebug(`${elementName}: play() rejected on attempt ${attempt}: ${err.message}`);
+              logDebug(`${elementName}: play() rejected on attempt ${attempt}: ${err.name} - ${err.message}`);
+              
+              // Handle autoplay policy restriction
+              if (err.name === 'NotAllowedError') {
+                logDebug(`${elementName}: Autoplay blocked, muting and retrying...`);
+                element.muted = true;
+                if (element === videoElement) setIsMuted(true);
+                
+                try {
+                  await element.play();
+                  logDebug(`${elementName}: play() succeeded after muting`);
+                  return true;
+                } catch (mutePlayErr: any) {
+                  logError(`${elementName}: play() failed even after muting: ${mutePlayErr.message}`);
+                }
+              }
               
               if (attempt < maxRetries) {
                 const delay = Math.pow(2, attempt) * 100; // 200ms, 400ms, 800ms
                 logDebug(`${elementName}: Retrying in ${delay}ms...`);
                 await new Promise(resolve => setTimeout(resolve, delay));
-                
-                // For AbortError, ensure it's unmuted for next attempt
-                if (err.name === 'AbortError' && element.muted) {
-                  element.muted = false;
-                }
               } else {
                 logError(`${elementName}: Failed to play after ${maxRetries} attempts: ${err.message}`);
                 return false;
