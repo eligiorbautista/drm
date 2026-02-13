@@ -2,7 +2,6 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useWhep } from '../hooks/useWhep';
 import { detectDrmCapability } from '../lib/drmCapability';
 import { initializeDrm, type DrmEventHandlers } from '../lib/drmConfig';
-import { checkEmeAvailability } from '../lib/drmUtils';
 import { DebugPanel } from './DebugPanel';
 
 export interface PlayerProps {
@@ -246,18 +245,11 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
    * @param pc - RTCPeerConnection instance
    */
   const configureDrm = async (pc: RTCPeerConnection) => {
-    // ── Step 1: EME availability check ──────────────────────────────────
-    // Catches cross-origin iframe permission issues early before any DRM work.
+    // Note: EME availability is checked INSIDE detectDrmCapability() below.
+    // Do NOT add a separate checkEmeAvailability() call here — it would
+    // cause duplicate requestMediaKeySystemAccess probes.
     if (encrypted) {
       logDebug('DRM Encrypted Playback Mode ENABLED');
-      const emeCheck = await checkEmeAvailability(logDebug);
-      if (!emeCheck.available) {
-        const errMsg = emeCheck.reason || 'EME unavailable';
-        logError(`EME check failed: ${errMsg}`);
-        setDrmError(errMsg);
-        throw new Error(errMsg);
-      }
-      logDebug('EME availability check passed');
     } else {
       logWarning('DRM Encrypted Playback Mode DISABLED - Playing unencrypted stream');
     }
@@ -274,7 +266,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         // Device only supports Widevine L3 (software) or has no DRM at all.
         // We require L1/hardware-backed security — no exceptions.
         setSecurityLevel('L3');
-        logError(`[DRM] ${capability.blockReason}`);
+        const errMsg = capability.blockReason || 'No hardware-backed DRM available';
+        logError(`[DRM] ${errMsg}`);
+        setDrmError(errMsg);
         return; // Abort DRM setup — L3 overlay will show
       }
 
