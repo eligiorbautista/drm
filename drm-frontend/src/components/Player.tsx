@@ -247,10 +247,33 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     console.log('[Embed Mode] Setting up video monitoring');
     
     const checkVideo = setInterval(() => {
-      if (video.paused) {
-        console.log('[Embed Mode] Video paused unexpectedly, restarting...');
-        video.play().catch(e => console.warn('[Embed Mode] Play failed:', e.message));
+      if (video.paused && video.srcObject) {
+        console.log('[Embed Mode] Video paused unexpectedly, attempting to restart...');
+        
+        // Ensure audio context is running (browser policy)
+        const audioCtx = (window as any).webkitAudioContext || (window as any).AudioContext;
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume().then(() => {
+            console.log('[Embed Mode] AudioContext resumed');
+          });
+        }
+        
+        // Try to play with user gesture if possible
+        video.play()
+          .then(() => console.log('[Embed Mode] Video restarted successfully'))
+          .catch(e => {
+            console.warn('[Embed Mode] Play failed:', e.message);
+            
+            // For AbortError, try unmuting first
+            if (e.name === 'AbortError' && video.muted) {
+              video.muted = false;
+              setTimeout(() => {
+                video.play().catch(err => console.warn('[Embed Mode] Retry play failed:', err.message));
+              }, 100);
+            }
+          });
       }
+      
       if (video.srcObject) {
         const stream = video.srcObject as MediaStream;
         if (stream.getVideoTracks().length > 0) {
@@ -415,13 +438,21 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     const videoElement = videoRef.current!;
     const audioElement = audioRef.current!;
 
+    // Get environment from env config
+    const envValue = import.meta.env.VITE_DRM_ENVIRONMENT;
+    // @ts-ignore: Accessing static properties via string index
+    const drmtodayEnv = rtcDrmEnvironments[envValue === 'Production' || envValue === 'production' 
+      ? 'Production' 
+      : 'Staging'];
+    logDebug(`Using DRMtoday environment: ${envValue} -> ${drmtodayEnv.baseUrl()}`);
+
     // Build DRM config with platform-specific settings
     // For Callback Authorization: We pass merchant, userId, and environment
     // DRMtoday calls our backend at /api/callback to get the CRT
     const drmConfig: any = {
       merchant: merchant || import.meta.env.VITE_DRM_MERCHANT,
       userId: userId || 'elidev-test',  // Required for Callback Authorization
-      environment: rtcDrmEnvironments.Staging,
+      environment: drmtodayEnv,  // ✅ Now uses env instead of hardcoded Staging
       videoElement,
       audioElement,
       video: videoConfig,
@@ -500,10 +531,14 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       // output-restricted / output-downscaled are non-fatal in many cases —
       // the CDM may still allow playback. Only show a fatal overlay for errors
       // that truly block decryption (e.g. expired, internal-error, not-allowed).
-      const isOutputIssue = msg.includes('output-restricted') || msg.includes('output-downscaled');
+      const isOutputIssue = msg.includes('output-restricted') || 
+                          msg.includes('output-downscaled') ||
+                          msg.includes('status: output-restricted') ||
+                          msg.includes('not usable for decryption');
       if (isOutputIssue) {
         logDebug('[DRM] output-restricted/downscaled detected — treating as warning, not fatal');
         console.warn('[DRM]', msg);
+        console.warn('[DRM] This is expected on Windows/Android L3 (software DRM) - playback should continue');
         return; // don't block the UI
       }
 
@@ -543,15 +578,50 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       try {
         rtcDrmOnTrack(event);
         logDebug(`rtcDrmOnTrack succeeded for ${event.track.kind} - Stream is being DECRYPTED`);
-        // Explicitly call play() after DRM processes the track (matches whep behavior)
+        
+        // Helper function to retry play() with exponential backoff
+        const retryPlay = async (element: HTMLMediaElement, elementName: string, maxRetries = 3) => {
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              // Unmute before playing (browser requirement for autoplay)
+              if (element.muted) {
+                element.muted = false;
+                logDebug(`${elementName}: Unmuting before play()`);
+              }
+              
+              await element.play();
+              logDebug(`${elementName}: play() succeeded on attempt ${attempt}`);
+              return true;
+            } catch (err: any) {
+              logDebug(`${elementName}: play() rejected on attempt ${attempt}: ${err.message}`);
+              
+              if (attempt < maxRetries) {
+                const delay = Math.pow(2, attempt) * 100; // 200ms, 400ms, 800ms
+                logDebug(`${elementName}: Retrying in ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                
+                // For AbortError, ensure it's unmuted for next attempt
+                if (err.name === 'AbortError' && element.muted) {
+                  element.muted = false;
+                }
+              } else {
+                logError(`${elementName}: Failed to play after ${maxRetries} attempts: ${err.message}`);
+                return false;
+              }
+            }
+          }
+          return false;
+        };
+        
+        // Explicitly call play() after DRM processes the track with retry logic
         if (event.track.kind === 'video') {
-          videoElement.play()
-            .then(() => logDebug('videoElement.play() resolved'))
-            .catch((err: any) => logDebug(`videoElement.play() rejected: ${err.message}`));
+          retryPlay(videoElement, 'videoElement').then(success => {
+            if (success) {
+              setIsPlaying(true);
+            }
+          });
         } else if (event.track.kind === 'audio') {
-          audioElement.play()
-            .then(() => logDebug('audioElement.play() resolved'))
-            .catch((err: any) => logDebug(`audioElement.play() rejected: ${err.message}`));
+          retryPlay(audioElement, 'audioElement');
         }
       } catch (err: any) {
         logDebug(`rtcDrmOnTrack FAILED: ${err.message}`);
@@ -752,10 +822,38 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
               }`}>
                 <video
                   ref={videoRef}
-                  className="w-full h-full object-contain"
+                  className="w-full h-full object-contain cursor-pointer"
                   autoPlay
                   playsInline
                   muted={isMuted}
+                  onClick={async () => {
+                    const video = videoRef.current;
+                    if (!video) return;
+                    
+                    console.log('[Player] Video clicked, ensuring playback');
+                    
+                    // Ensure audio context is running
+                    const audioCtx = (window as any).webkitAudioContext || (window as any).AudioContext;
+                    if (audioCtx && audioCtx.state === 'suspended') {
+                      console.log('[Player] Resuming AudioContext');
+                      await audioCtx.resume();
+                    }
+                    
+                    // Unmute if muted and user clicks
+                    if (video.muted) {
+                      video.muted = false;
+                      setIsMuted(false);
+                      console.log('[Player] Unmuted due to user interaction');
+                    }
+                    
+                    // Try to play
+                    try {
+                      await video.play();
+                      console.log('[Player] Video play() successful after click');
+                    } catch (err: any) {
+                      console.warn('[Player] Play failed after click:', err.message);
+                    }
+                  }}
                 />
               </div>
 
