@@ -12,7 +12,7 @@
  */
 
 import { rtcDrmConfigure, rtcDrmOnTrack, rtcDrmEnvironments } from './drm';
-import type { DrmConfig, TrackConfig } from './drm';
+import type { DrmConfig } from './drm';
 import { hexToUint8Array } from './drmUtils';
 import type { DrmCapabilityResult } from './drmCapability';
 
@@ -100,13 +100,14 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
     // ── Video track config ────────────────────────────────────────────────
     // FairPlay on iOS/Safari: keyId is extracted from the SKD URL by the CDM,
     // so we only pass iv. The robustness parameter is not supported by FairPlay.
-    let videoConfig: TrackConfig;
+    let videoConfig: any;  // `any` because requireHDCP is used by the library but not in the TS type
 
     if (platform.isIOS) {
         videoConfig = {
             codec: 'H264' as const,
             encryption: 'cbcs' as const,  // FairPlay always uses cbcs
             iv,                            // iv is REQUIRED for FairPlay
+            requireHDCP: 'HDCP_v1' as const,  // Output protection enforcement
         };
     } else {
         // Widevine/PlayReady: explicit keyId + iv + HW-only robustness
@@ -116,6 +117,7 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
             robustness: 'HW' as const,    // Only L1/hardware — L3 devices are blocked upstream
             keyId,
             iv,
+            requireHDCP: 'HDCP_v1' as const,  // Output protection enforcement
         };
     }
 
