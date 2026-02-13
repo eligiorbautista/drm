@@ -774,21 +774,20 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
                   </svg>
                 </div>
-                <h3 className="text-white font-semibold text-lg sm:text-xl mb-2">Unsupported Device</h3>
+                <h3 className="text-white font-semibold text-lg sm:text-xl mb-3">Playback Not Available</h3>
                 <p className="text-[#d0d0d0] text-sm sm:text-base mb-4 leading-relaxed">
-                  This content requires <strong className="text-white">hardware-level content protection</strong> that isn't available on your current device or browser.
+                  This content requires a higher level of content protection than your current device or browser supports.
                 </p>
-                <p className="text-[#a0a0a0] text-xs sm:text-sm mb-5 leading-relaxed">
-                  Try watching on a supported device:
-                </p>
-                <div className="flex flex-wrap justify-center gap-2 sm:gap-3 mb-5">
-                  <span className="px-3 py-1.5 bg-[#252525] rounded-full text-xs sm:text-sm text-[#d0d0d0] border border-[#404040]">📱 Smartphone</span>
-                  <span className="px-3 py-1.5 bg-[#252525] rounded-full text-xs sm:text-sm text-[#d0d0d0] border border-[#404040]">📺 Smart TV</span>
-                  <span className="px-3 py-1.5 bg-[#252525] rounded-full text-xs sm:text-sm text-[#d0d0d0] border border-[#404040]">💻 Windows PC</span>
-                  <span className="px-3 py-1.5 bg-[#252525] rounded-full text-xs sm:text-sm text-[#d0d0d0] border border-[#404040]">🍎 Mac (Safari)</span>
+                <div className="w-full bg-[#252525]/60 rounded-lg p-4 mb-4 border border-[#333]">
+                  <p className="text-[#a0a0a0] text-xs sm:text-sm leading-relaxed text-left mb-2 font-medium text-[#c0c0c0]">What you can try:</p>
+                  <ul className="text-[#a0a0a0] text-xs sm:text-sm leading-relaxed text-left space-y-1.5">
+                    <li className="flex items-start gap-2"><span className="text-amber-500 mt-0.5">&#8226;</span><span>Use a different browser on this device</span></li>
+                    <li className="flex items-start gap-2"><span className="text-amber-500 mt-0.5">&#8226;</span><span>Try watching on a different device</span></li>
+                    <li className="flex items-start gap-2"><span className="text-amber-500 mt-0.5">&#8226;</span><span>Contact support if the issue persists</span></li>
+                  </ul>
                 </div>
-                <p className="text-[#666] text-[10px] sm:text-xs">
-                  Error: Widevine L1 required · Your device supports L3 only
+                <p className="text-[#555] text-[10px] sm:text-xs">
+                  Security level: L3 (software only) — L1 (hardware) required
                 </p>
               </div>
             </div>
@@ -830,8 +829,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             <div
               ref={videoContainerRef}
               className={`${(isEmbedMode || isFullscreen)
-                  ? 'fixed inset-0 bg-black'
-                  : ''
+                ? 'fixed inset-0 bg-black'
+                : ''
                 }`}
               style={isEmbedMode || isFullscreen ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50 } : {}}
             >
@@ -868,8 +867,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
 
               {/* Video element - fills entire screen in fullscreen mode */}
               <div className={`${isEmbedMode || isFullscreen
-                  ? 'h-screen w-full'
-                  : 'aspect-video sm:aspect-video lg:aspect-video xl:aspect-[21/9] max-h-[40vh] sm:max-h-[50vh] lg:max-h-[60vh] xl:max-h-[70vh]'
+                ? 'h-screen w-full'
+                : 'aspect-video sm:aspect-video lg:aspect-video xl:aspect-[21/9] max-h-[40vh] sm:max-h-[50vh] lg:max-h-[60vh] xl:max-h-[70vh]'
                 }`}>
                 <video
                   ref={videoRef}
@@ -926,19 +925,13 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
                       </svg>
                     </div>
-                    <h3 className="text-white font-bold text-sm sm:text-lg mb-2">Unsupported Device</h3>
+                    <h3 className="text-white font-bold text-sm sm:text-lg mb-2">Playback Not Available</h3>
                     <p className="text-[#d0d0d0] text-xs sm:text-sm mb-3 leading-relaxed">
-                      This content requires <strong className="text-white">hardware-level content protection</strong> that isn't available on your current device or browser.
+                      This content requires a higher level of content protection than your current device or browser supports.
                     </p>
-                    <p className="text-[#a0a0a0] text-[11px] sm:text-xs mb-3">Try on a supported device:</p>
-                    <div className="flex flex-wrap justify-center gap-1.5 sm:gap-2 mb-3">
-                      <span className="px-2 py-1 bg-[#252525] rounded-full text-[10px] sm:text-xs text-[#d0d0d0] border border-[#404040]">📱 Phone</span>
-                      <span className="px-2 py-1 bg-[#252525] rounded-full text-[10px] sm:text-xs text-[#d0d0d0] border border-[#404040]">📺 Smart TV</span>
-                      <span className="px-2 py-1 bg-[#252525] rounded-full text-[10px] sm:text-xs text-[#d0d0d0] border border-[#404040]">💻 Windows</span>
-                      <span className="px-2 py-1 bg-[#252525] rounded-full text-[10px] sm:text-xs text-[#d0d0d0] border border-[#404040]">🍎 Safari</span>
-                    </div>
+                    <p className="text-[#a0a0a0] text-[11px] sm:text-xs mb-2">Try a different browser or device.</p>
                     <p className="text-[#555] text-[9px] sm:text-[10px]">
-                      Widevine L1 required · Your device: L3 only
+                      Security level: L3 (software only) — L1 (hardware) required
                     </p>
                   </div>
                 </div>
@@ -1008,8 +1001,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                     onClick={handleConnect}
                     disabled={isConnecting}
                     className={`px-4 py-2.5 sm:py-3 text-[#141414] rounded-lg font-medium transition-all shadow-lg cursor-pointer min-h-[48px] ${isConnecting
-                        ? 'bg-[#404040] cursor-not-allowed opacity-75'
-                        : 'bg-white hover:bg-[#e5e5e5] hover:scale-105 active:scale-95'
+                      ? 'bg-[#404040] cursor-not-allowed opacity-75'
+                      : 'bg-white hover:bg-[#e5e5e5] hover:scale-105 active:scale-95'
                       }`}
                   >
                     {isConnecting ? 'Connecting...' : 'Connect'}
