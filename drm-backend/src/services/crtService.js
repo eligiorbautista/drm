@@ -21,8 +21,7 @@ function buildPurchaseCrt(assetId, options = {}) {
   } = options;
 
   // Ultra-compatible CRT structure
-  const crt = {
-    type: 'purchase',
+  const crt = { 
     profile: { type: 'purchase' }, // legacy support
     assetId,
     outputProtection: {
@@ -53,7 +52,6 @@ function buildRentalCrt(assetId, options = {}) {
   } = options;
 
   const crt = {
-    type: 'rental',
     profile: { 
       type: 'rental',
       relativeExpiration,
