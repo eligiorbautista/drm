@@ -31,6 +31,24 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
       secLevel: clientInfo?.secLevel,
     });
 
+    // --- Widevine L3 denial ---
+    // Deny license requests from software-only (L3) Widevine devices.
+    // L1 (hardware-secure) is required for content protection.
+    if ((drmScheme === 'WIDEVINE_MODULAR' || drmScheme === 'WIDEVINE')
+      && clientInfo?.secLevel === '3') {
+      logger.warn('License DENIED: Widevine L3 not allowed', {
+        user,
+        asset: normalizedAssetId,
+        drmScheme,
+        secLevel: '3',
+        remoteAddr: requestMetadata?.remoteAddr,
+      });
+      return res.status(403).json({
+        error: 'SecurityLevelInsufficient',
+        message: 'This content requires Widevine L1 hardware security. Your device only supports L3 (software).',
+      });
+    }
+
     const USE_TEMPLATES = false; // Set to true after creating templates in DRMtoday dashboard
 
     const TEMPLATE_IDS = {

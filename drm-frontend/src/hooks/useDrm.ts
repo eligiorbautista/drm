@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { rtcDrmConfigure, rtcDrmOnTrack, rtcDrmEnvironments } from '../lib/drm';
-import { hexToUint8Array, validateDrmKey } from '../lib/drmUtils';
+import { hexToUint8Array, validateDrmKey, detectWidevineSecurityLevel } from '../lib/drmUtils';
 import type { DrmConfig, TrackConfig } from '../lib/drm';
 
 export interface UseDrmOptions {
@@ -23,19 +23,19 @@ function detectPlatform() {
   const uad = (navigator as any).userAgentData;
   const platform = uad?.platform || navigator.platform || '';
   const isMobile = uad?.mobile === true;
-  
+
   // Firefox reports as Linux everywhere - detect via userAgent
   const uaHasAndroid = /Android/i.test(navigator.userAgent);
   const uaHasFirefox = /Firefox/i.test(navigator.userAgent);
-  
+
   // Android detection: prioritize userAgent over platform
-  const isAndroid = uaHasAndroid || 
-                    platform.toLowerCase() === 'android' ||
-                    (isMobile && /linux/i.test(platform));
-  
+  const isAndroid = uaHasAndroid ||
+    platform.toLowerCase() === 'android' ||
+    (isMobile && /linux/i.test(platform));
+
   // Firefox detection
   const isFirefox = uaHasFirefox;
-  
+
   return {
     isAndroid,
     isFirefox,
@@ -43,39 +43,22 @@ function detectPlatform() {
   };
 }
 
-/**
- * Detect Android Widevine robustness level
- */
-async function detectAndroidRobustness(): Promise<'HW' | 'SW'> {
-  try {
-    await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
-      initDataTypes: ['cenc'],
-      videoCapabilities: [{
-        contentType: 'video/mp4; codecs="avc1.42E01E"',
-        robustness: 'HW_SECURE_ALL'
-      }]
-    }]);
-    console.log('[DRM] Widevine L1 (HW_SECURE_ALL) is supported');
-    return 'HW';
-  } catch {
-    console.log('[DRM] Widevine L1 (HW) NOT supported — falling back to SW');
-    return 'SW';
-  }
-}
+/** Error code thrown when L3 (software-only) Widevine is detected */
+export const WIDEVINE_L3_UNSUPPORTED = 'WIDEVINE_L3_UNSUPPORTED';
 
 /**
  * Debug logger with on-screen overlay for physical devices
  */
 export function logDebug(msg: string) {
   console.log(msg);
-  
+
   // Send to debug panel
   window.dispatchEvent(
     new CustomEvent('debug-log', {
       detail: { id: 'player-debug', level: 'info' as const, message: msg, timestamp: new Date().toLocaleTimeString() },
     })
   );
-  
+
   // Legacy overlay support
   let overlay = document.getElementById('debug-overlay');
   if (!overlay) {
@@ -95,7 +78,7 @@ export function logDebug(msg: string) {
  */
 export function logError(msg: string) {
   console.error(msg);
-  
+
   // Send to debug panel with error level
   window.dispatchEvent(
     new CustomEvent('debug-log', {
@@ -127,28 +110,24 @@ export function useDrm() {
     const keyId = options.keyId || hexToUint8Array(keyIdHex);
     const iv = options.iv || hexToUint8Array(ivHex);
 
-    // Detect platform and robustness
+    // Detect platform
     const { isAndroid, isFirefox, platform } = detectPlatform();
     logDebug(`Platform detected: ${platform} (isAndroid=${isAndroid}, isFirefox=${isFirefox})`);
 
-    // Allow URL param override: ?robustness=HW or ?robustness=SW
-    const params = new URLSearchParams(window.location.search);
-    const robustnessOverride = params.get('robustness')?.toUpperCase() as 'HW' | 'SW' | null;
+    // Detect Widevine security level (L1 = hardware-secure, L3 = software-only)
+    const securityLevel = await detectWidevineSecurityLevel();
+    logDebug(`Widevine security level: ${securityLevel}`);
 
-    let androidRobustness: 'HW' | 'SW' = 'SW';
-    if (isAndroid) {
-      androidRobustness = await detectAndroidRobustness();
-    }
-
-    // Apply override if provided
-    if (robustnessOverride === 'HW' || robustnessOverride === 'SW') {
-      androidRobustness = robustnessOverride;
-      logDebug(`Robustness overridden via URL param: ${robustnessOverride}`);
+    if (securityLevel === 'L3') {
+      logError('[DRM] Device only supports Widevine L3 (software). L1 (hardware) is required.');
+      const err = new Error('This content requires hardware-level content protection (Widevine L1). Your device only supports software-level protection (L3).');
+      err.name = WIDEVINE_L3_UNSUPPORTED;
+      throw err;
     }
 
     // Determine media buffer size based on platform
     let mediaBufferMs = options.mediaBufferMs || -1;
-    if (isAndroid && androidRobustness === 'HW' && mediaBufferMs < 600) {
+    if (isAndroid && mediaBufferMs < 600) {
       mediaBufferMs = 1200;
       logDebug(`Increased mediaBufferMs to ${mediaBufferMs} for Android HW robustness`);
     } else if (isFirefox && mediaBufferMs < 900) {
@@ -173,7 +152,7 @@ export function useDrm() {
     // @ts-ignore: Accessing static properties via string index
     const env = rtcDrmEnvironments[options.environment || 'Staging'];
 
-    const robustness: 'HW' | 'SW' = isAndroid ? androidRobustness : 'SW';
+    const robustness: 'HW' | 'SW' = 'HW'; // Always HW — L3 devices are rejected above
 
     const videoConfig: TrackConfig = videoTrackConfig || {
       codec: 'H264' as const,
@@ -228,7 +207,7 @@ export function useDrm() {
     // Add diagnostic video/audio element event listeners
     const videoElement = options.videoElement;
     const audioElement = options.audioElement;
-    
+
     for (const evName of ['loadedmetadata', 'loadeddata', 'canplay', 'playing', 'waiting', 'stalled', 'error', 'emptied', 'suspend']) {
       videoElement.addEventListener(evName, () => logDebug(`video event: ${evName}`));
       if (audioElement) {
@@ -259,11 +238,11 @@ export function useDrm() {
         // Call rtcDrmOnTrack without config arg — single-stream mode, matches whep behavior.
         // The library uses the config stored internally from rtcDrmConfigure.
         rtcDrmOnTrack(event);
-        
+
         // After the DRM library processes the track, try to start playback
         const videoElement = configRef.current.videoElement;
         const audioElement = configRef.current.audioElement;
-        
+
         if (event.track.kind === 'video' && videoElement) {
           const playPromise = videoElement.play();
           if (playPromise !== undefined) {

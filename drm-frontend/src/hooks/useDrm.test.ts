@@ -12,26 +12,36 @@ vi.mock('../lib/drm', async (importOriginal) => {
   };
 });
 
+// Mock detectWidevineSecurityLevel to return 'L1' in test environment
+// (jsdom has no EME API, so it would otherwise always detect L3)
+vi.mock('../lib/drmUtils', async (importOriginal) => {
+  const actual = await importOriginal() as any;
+  return {
+    ...actual,
+    detectWidevineSecurityLevel: vi.fn().mockResolvedValue('L1'),
+  };
+});
+
 describe('useDrm', () => {
-  it('should call rtcDrmConfigure when setup is called', () => {
+  it('should call rtcDrmConfigure when setup is called', async () => {
     const { result } = renderHook(() => useDrm());
     const videoElement = document.createElement('video');
     const options = { merchant: 'test', videoElement };
-    
-    act(() => {
-      result.current.setup(options);
+
+    await act(async () => {
+      await result.current.setup(options);
     });
 
     expect(DrmLib.rtcDrmConfigure).toHaveBeenCalled();
   });
 
-  it('should call rtcDrmOnTrack when handleTrack is called', () => {
+  it('should call rtcDrmOnTrack when handleTrack is called', async () => {
     const { result } = renderHook(() => useDrm());
     const videoElement = document.createElement('video');
     const options = { merchant: 'test', videoElement };
-    
-    act(() => {
-      result.current.setup(options);
+
+    await act(async () => {
+      await result.current.setup(options);
     });
 
     const event = { track: {} } as any;

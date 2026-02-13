@@ -40,3 +40,31 @@ export function validateDrmKey(key: string | Uint8Array, expectedLength: number 
         return key.length === expectedLength;
     }
 }
+
+/**
+ * Detect Widevine security level by probing for HW_SECURE_ALL robustness.
+ * Works on all platforms (Android, Windows, Linux, macOS, ChromeOS).
+ *
+ * - L1 = hardware-secure (TEE/secure hardware handles decryption)
+ * - L3 = software-only (no hardware protection — HDCP enforcement impossible)
+ *
+ * @returns 'L1' if hardware-secure Widevine is available, 'L3' otherwise
+ */
+export async function detectWidevineSecurityLevel(): Promise<'L1' | 'L3'> {
+    if (!navigator.requestMediaKeySystemAccess) {
+        return 'L3'; // EME not available at all
+    }
+
+    try {
+        await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
+            initDataTypes: ['cenc'],
+            videoCapabilities: [{
+                contentType: 'video/mp4; codecs="avc1.42E01E"',
+                robustness: 'HW_SECURE_ALL'
+            }]
+        }]);
+        return 'L1';
+    } catch {
+        return 'L3';
+    }
+}

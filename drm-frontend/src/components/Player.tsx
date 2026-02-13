@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useWhep } from '../hooks/useWhep';
 import { rtcDrmConfigure, rtcDrmOnTrack, rtcDrmEnvironments } from '../lib/rtc-drm-transform.min.js';
-import { hexToUint8Array } from '../lib/drmUtils';
+import { hexToUint8Array, detectWidevineSecurityLevel } from '../lib/drmUtils';
 import { DebugPanel } from './DebugPanel';
 
 export interface PlayerProps {
@@ -47,7 +47,7 @@ function checkEmeAvailability(logDebug: (msg: string) => void): Promise<{ availa
       if (e.name === 'NotAllowedError') {
         const msg = isInIframe
           ? 'DRM is blocked because the iframe is missing the "encrypted-media" permission. '
-            + 'The embedding page must use: <iframe allow="encrypted-media; autoplay" ...>'
+          + 'The embedding page must use: <iframe allow="encrypted-media; autoplay" ...>'
           : 'DRM is blocked by browser permissions policy. Ensure encrypted-media is allowed.';
         logDebug(`EME blocked (${ks}): ${e.name} — ${e.message}`);
         return Promise.resolve({ available: false, reason: msg });
@@ -70,10 +70,11 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const { isConnected, isConnecting, error, connect, disconnect } = useWhep();
-  
+
   // Always start muted for autoplay compatibility
   const [isMuted, setIsMuted] = useState(true);
   const [drmError, setDrmError] = useState<string | null>(null);
+  const [securityLevel, setSecurityLevel] = useState<'L1' | 'L3' | 'checking' | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
@@ -81,35 +82,35 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   // --- Logging helpers ---
   // In embed mode, disable all logging for security and clean output
   const broadcastDebugEvent = isEmbedMode
-    ? () => {}
+    ? () => { }
     : (detail: { id: string; level: 'info' | 'error' | 'warning'; message: string }) => {
-        window.dispatchEvent(
-          new CustomEvent('debug-log', {
-            detail: { ...detail, timestamp: new Date().toLocaleTimeString() },
-          })
-        );
-      };
+      window.dispatchEvent(
+        new CustomEvent('debug-log', {
+          detail: { ...detail, timestamp: new Date().toLocaleTimeString() },
+        })
+      );
+    };
 
   const logDebug = isEmbedMode
-    ? () => {}
+    ? () => { }
     : (...args: any[]) => {
-        const message = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
-        broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'info', message });
-      };
+      const message = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
+      broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'info', message });
+    };
 
   const logError = isEmbedMode
-    ? () => {}
+    ? () => { }
     : (...args: any[]) => {
-        const message = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
-        broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'error', message });
-      };
+      const message = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
+      broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'error', message });
+    };
 
   const logWarning = isEmbedMode
-    ? () => {}
+    ? () => { }
     : (...args: any[]) => {
-        const message = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
-        broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'warning', message });
-      };
+      const message = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
+      broadcastDebugEvent({ id: DEBUG_PANEL_ID, level: 'warning', message });
+    };
 
   // --- Sync mute state to video/audio elements ---
   useEffect(() => {
@@ -121,7 +122,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   // Toggle fullscreen mode using Fullscreen API with CSS fallback for iframe compatibility
   const toggleFullscreen = async () => {
     if (!videoContainerRef.current) return;
-    
+
     try {
       if (!document.fullscreenElement) {
         await videoContainerRef.current.requestFullscreen();
@@ -142,7 +143,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
-    
+
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
@@ -163,12 +164,12 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   useEffect(() => {
     if (isConnected && videoRef.current) {
       console.log('[Player] Connected - ensuring video is playing');
-      
+
       // Check if video is already playing
       if (videoRef.current.paused) {
         console.log('[Player] Video is paused, attempting to play');
         const playPromise = videoRef.current.play();
-        
+
         if (playPromise !== undefined) {
           playPromise.then(() => {
             console.log('[Player] Video play() succeeded');
@@ -221,16 +222,16 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   // --- Extra monitoring for embed mode: ensure video stays playing ---
   useEffect(() => {
     if (!isEmbedMode || !isConnected) return;
-    
+
     const video = videoRef.current;
     if (!video) return;
-    
+
     console.log('[Embed Mode] Setting up video monitoring');
-    
+
     const checkVideo = setInterval(() => {
       if (video.paused && video.srcObject) {
         console.log('[Embed Mode] Video paused unexpectedly, attempting to restart...');
-        
+
         // Ensure audio context is running (browser policy)
         const audioCtx = (window as any).webkitAudioContext || (window as any).AudioContext;
         if (audioCtx && audioCtx.state === 'suspended') {
@@ -238,13 +239,13 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             console.log('[Embed Mode] AudioContext resumed');
           });
         }
-        
+
         // Try to play with user gesture if possible
         video.play()
           .then(() => console.log('[Embed Mode] Video restarted successfully'))
           .catch(e => {
             console.warn('[Embed Mode] Play failed:', e.message);
-            
+
             // For AbortError, try unmuting first
             if (e.name === 'AbortError' && video.muted) {
               video.muted = false;
@@ -254,7 +255,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             }
           });
       }
-      
+
       if (video.srcObject) {
         const stream = video.srcObject as MediaStream;
         if (stream.getVideoTracks().length > 0) {
@@ -265,7 +266,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         console.log('[Embed Mode] WARNING: video has no srcObject');
       }
     }, 2000);
-    
+
     return () => clearInterval(checkVideo);
   }, [isConnected, isEmbedMode]);
 
@@ -289,6 +290,23 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     } else {
       logWarning('DRM Encrypted Playback Mode DISABLED - Playing unencrypted stream');
     }
+    // --- Widevine L1 pre-flight check ---
+    // Detect security level BEFORE attempting DRM setup so we can show
+    // a friendly overlay instead of a cryptic DRM error.
+    if (encrypted) {
+      setSecurityLevel('checking');
+      const level = await detectWidevineSecurityLevel();
+      setSecurityLevel(level);
+      logDebug(`Widevine security level detected: ${level}`);
+
+      if (level === 'L3') {
+        const msg = 'This content requires hardware-level content protection (Widevine L1). Your device only supports software-level protection (L3).';
+        logError(`[DRM] L3 detected — blocking playback: ${msg}`);
+        // Don't set drmError — we use securityLevel state for a dedicated overlay
+        return; // Abort DRM setup entirely
+      }
+    }
+
     const keyId = hexToUint8Array(import.meta.env.VITE_DRM_KEY_ID);
     const iv = hexToUint8Array(import.meta.env.VITE_DRM_IV);
 
@@ -296,18 +314,18 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     const uad = (navigator as any).userAgentData;
     const platform = uad?.platform || navigator.platform || '';
     const isMobile = uad?.mobile === true;
-    
+
     // Firefox reports all devices as "Linux" for privacy, so we need to detect it via userAgent
     // and also check for Android in userAgent before checking platform
     const uaHasAndroid = /Android/i.test(navigator.userAgent);
     const uaHasFirefox = /Firefox/i.test(navigator.userAgent);
     const uaHasMobile = /Mobile|Tablet/i.test(navigator.userAgent);
-    
+
     // iOS detection: check for iPhone, iPad, iPod, or iOS in userAgent
     // iOS uses Safari/FairPlay which requires iv but handles keyId differently
     const uaHasIOS = /iPhone|iPad|iPod|iOS/i.test(navigator.userAgent);
     const isIOS = uaHasIOS || platform.toLowerCase() === 'ios';
-    
+
     // Safari detection: Must be Safari AND NOT Chrome/Edge/Firefox
     // Chrome and Edge on Chrome engine also contain "Safari" in userAgent
     const uaHasChrome = /Chrome/i.test(navigator.userAgent);
@@ -315,31 +333,31 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     const uaHasSafari = /Safari/i.test(navigator.userAgent) && !uaHasChrome;
     // Only use FairPlay (isSafari=true) if it's actually Safari (not Chrome/Edge)
     const isSafari = uaHasSafari && !uaHasEdge;
-    
+
     // Android detection: prioritize userAgent over platform (Firefox/Chrome on Android)
-    const isAndroid = uaHasAndroid || 
-                      platform.toLowerCase() === 'android' ||
-                      (isMobile && /linux/i.test(platform));
-    
+    const isAndroid = uaHasAndroid ||
+      platform.toLowerCase() === 'android' ||
+      (isMobile && /linux/i.test(platform));
+
     // Firefox detection: check userAgent (works cross-platform)
     const isFirefox = uaHasFirefox;
-    
+
     // Windows detection (for non-Firefox browsers)
     const isWindows = !isFirefox && (/windows/i.test(platform) || /Win/i.test(navigator.userAgent));
-    
+
     // Chrome/Edge detection (excluding mobile which are handled separately)
     const isChrome = (uaHasChrome && !uaHasEdge) && !isMobile;
     const isEdge = uaHasEdge && !isMobile;
-    
+
     // Platform detection priority: iOS > Android > Windows > Firefox > Safari > Chrome/Edge > Unknown
-    const detectedPlatform = isIOS ? 'iOS' : 
-                           isAndroid ? 'Android' : 
-                           isWindows ? 'Windows' : 
-                           isFirefox ? 'Firefox' : 
-                           isSafari ? 'Safari' : 
-                           isChrome ? 'Chrome' :
-                           isEdge ? 'Edge' :
-                           (platform || 'Unknown');
+    const detectedPlatform = isIOS ? 'iOS' :
+      isAndroid ? 'Android' :
+        isWindows ? 'Windows' :
+          isFirefox ? 'Firefox' :
+            isSafari ? 'Safari' :
+              isChrome ? 'Chrome' :
+                isEdge ? 'Edge' :
+                  (platform || 'Unknown');
     logDebug(`Platform detection: platform="${platform}", uad.mobile=${uad?.mobile}, uaHasAndroid=${uaHasAndroid}, isAndroid=${isAndroid}, isFirefox=${isFirefox}, isIOS=${isIOS}, isSafari=${isSafari}, isChrome=${isChrome}, isEdge=${isEdge}, uaHasMobile=${uaHasMobile}`);
     logDebug(`Detected platform: ${detectedPlatform} (FairPlay: ${isIOS || isSafari})`);
 
@@ -410,8 +428,8 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     // Get environment from env config
     const envValue = import.meta.env.VITE_DRM_ENVIRONMENT;
     // @ts-ignore: Accessing static properties via string index
-    const drmtodayEnv = rtcDrmEnvironments[envValue === 'Production' || envValue === 'production' 
-      ? 'Production' 
+    const drmtodayEnv = rtcDrmEnvironments[envValue === 'Production' || envValue === 'production'
+      ? 'Production'
       : 'Staging'];
     logDebug(`Using DRMtoday environment: ${envValue} -> ${drmtodayEnv.baseUrl()}`);
 
@@ -438,7 +456,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         try {
           const response = await fetch(url, opts);
           logDebug(`[DRM Fetch] Response status: ${response.status} ${response.statusText}`);
-          
+
           // Check for x-dt-client-info header (Base64 JSON)
           const clientInfo = response.headers.get('x-dt-client-info');
           if (clientInfo) {
@@ -449,7 +467,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
               logDebug(`[DRM Fetch] Could not decode x-dt-client-info header`);
             }
           }
-          
+
           return response;
         } catch (err: any) {
           logError(`[DRM Fetch] Network error: ${err.message}`);
@@ -520,7 +538,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       const e = videoElement.error;
       logDebug(`video MediaError: code=${e?.code}, message=${e?.message}`);
     });
-    
+
     videoElement.addEventListener('rtcdrmerror', (event: any) => {
       const msg = event.detail?.message || 'Unknown DRM error';
       logDebug(`DRM ERROR: ${msg}`);
@@ -528,10 +546,10 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       // output-restricted / output-downscaled are non-fatal in many cases —
       // the CDM may still allow playback. Only show a fatal overlay for errors
       // that truly block decryption (e.g. expired, internal-error, not-allowed).
-      const isOutputIssue = msg.includes('output-restricted') || 
-                          msg.includes('output-downscaled') ||
-                          msg.includes('status: output-restricted') ||
-                          msg.includes('not usable for decryption');
+      const isOutputIssue = msg.includes('output-restricted') ||
+        msg.includes('output-downscaled') ||
+        msg.includes('status: output-restricted') ||
+        msg.includes('not usable for decryption');
       if (isOutputIssue) {
         logDebug('[DRM] output-restricted/downscaled detected — treating as warning, not fatal');
         console.warn('[DRM]', msg);
@@ -575,7 +593,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       try {
         rtcDrmOnTrack(event);
         logDebug(`rtcDrmOnTrack succeeded for ${event.track.kind} - Stream is being DECRYPTED`);
-        
+
         // Helper function to retry play() with exponential backoff
         const retryPlay = async (element: HTMLMediaElement, elementName: string, maxRetries = 3) => {
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -585,13 +603,13 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
               return true;
             } catch (err: any) {
               logDebug(`${elementName}: play() rejected on attempt ${attempt}: ${err.name} - ${err.message}`);
-              
+
               // Handle autoplay policy restriction
               if (err.name === 'NotAllowedError') {
                 logDebug(`${elementName}: Autoplay blocked, muting and retrying...`);
                 element.muted = true;
                 if (element === videoElement) setIsMuted(true);
-                
+
                 try {
                   await element.play();
                   logDebug(`${elementName}: play() succeeded after muting`);
@@ -600,7 +618,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                   logError(`${elementName}: play() failed even after muting: ${mutePlayErr.message}`);
                 }
               }
-              
+
               if (attempt < maxRetries) {
                 const delay = Math.pow(2, attempt) * 100; // 200ms, 400ms, 800ms
                 logDebug(`${elementName}: Retrying in ${delay}ms...`);
@@ -613,7 +631,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
           }
           return false;
         };
-        
+
         // Explicitly call play() after DRM processes the track with retry logic
         if (event.track.kind === 'video') {
           retryPlay(videoElement, 'videoElement').then(success => {
@@ -721,7 +739,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                   {isConnected ? 'Loading Stream...' : 'Connecting...'}
                 </h3>
                 <p className="text-[#a0a0a0] text-sm">
-                  {isConnected 
+                  {isConnected
                     ? 'Buffering stream content. Please wait...'
                     : 'Please wait while we connect to the stream.'
                   }
@@ -747,8 +765,37 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             </div>
           )}
 
+          {/* L3 Unsupported Device Overlay (Embed Mode) */}
+          {securityLevel === 'L3' && (
+            <div className="fixed inset-0 flex items-center justify-center bg-[#141414]/95 z-20 p-4">
+              <div className="flex flex-col items-center text-center p-6 sm:p-8 max-w-sm sm:max-w-md">
+                <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 bg-[#252525] rounded-2xl mb-4 sm:mb-5 border border-amber-500/30">
+                  <svg className="w-8 h-8 sm:w-10 sm:h-10 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                  </svg>
+                </div>
+                <h3 className="text-white font-semibold text-lg sm:text-xl mb-2">Unsupported Device</h3>
+                <p className="text-[#d0d0d0] text-sm sm:text-base mb-4 leading-relaxed">
+                  This content requires <strong className="text-white">hardware-level content protection</strong> that isn't available on your current device or browser.
+                </p>
+                <p className="text-[#a0a0a0] text-xs sm:text-sm mb-5 leading-relaxed">
+                  Try watching on a supported device:
+                </p>
+                <div className="flex flex-wrap justify-center gap-2 sm:gap-3 mb-5">
+                  <span className="px-3 py-1.5 bg-[#252525] rounded-full text-xs sm:text-sm text-[#d0d0d0] border border-[#404040]">📱 Smartphone</span>
+                  <span className="px-3 py-1.5 bg-[#252525] rounded-full text-xs sm:text-sm text-[#d0d0d0] border border-[#404040]">📺 Smart TV</span>
+                  <span className="px-3 py-1.5 bg-[#252525] rounded-full text-xs sm:text-sm text-[#d0d0d0] border border-[#404040]">💻 Windows PC</span>
+                  <span className="px-3 py-1.5 bg-[#252525] rounded-full text-xs sm:text-sm text-[#d0d0d0] border border-[#404040]">🍎 Mac (Safari)</span>
+                </div>
+                <p className="text-[#666] text-[10px] sm:text-xs">
+                  Error: Widevine L1 required · Your device supports L3 only
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Error Overlay */}
-          {(error || drmError) && (
+          {(error || drmError) && securityLevel !== 'L3' && (
             <div className="fixed inset-0 flex items-center justify-center bg-[#141414]/95 z-20 p-4">
               <div className="flex flex-col items-center text-center p-6 sm:p-8 max-w-sm sm:max-w-md">
                 <div className="inline-flex items-center justify-center w-12 sm:w-16 h-12 sm:h-16 bg-[#252525] rounded-xl sm:rounded-2xl mb-3 sm:mb-4 border border-red-500/30">
@@ -780,13 +827,12 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
           {/* Responsive video container - adaptive aspect ratio */}
           <div className={`relative group w-full ${isEmbedMode || isFullscreen ? 'fixed inset-0 m-0 p-0 rounded-none bg-black z-50' : 'bg-[#1e1e1e] rounded-lg'}`}>
             {/* Video container - this goes fullscreen */}
-            <div 
+            <div
               ref={videoContainerRef}
-              className={`${
-                (isEmbedMode || isFullscreen)
-                  ? 'fixed inset-0 bg-black' 
+              className={`${(isEmbedMode || isFullscreen)
+                  ? 'fixed inset-0 bg-black'
                   : ''
-              }`}
+                }`}
               style={isEmbedMode || isFullscreen ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50 } : {}}
             >
               {/* Fullscreen header */}
@@ -821,11 +867,10 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
               )}
 
               {/* Video element - fills entire screen in fullscreen mode */}
-              <div className={`${
-                isEmbedMode || isFullscreen 
-                  ? 'h-screen w-full' 
+              <div className={`${isEmbedMode || isFullscreen
+                  ? 'h-screen w-full'
                   : 'aspect-video sm:aspect-video lg:aspect-video xl:aspect-[21/9] max-h-[40vh] sm:max-h-[50vh] lg:max-h-[60vh] xl:max-h-[70vh]'
-              }`}>
+                }`}>
                 <video
                   ref={videoRef}
                   className="w-full h-full object-contain cursor-pointer"
@@ -835,23 +880,23 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                   onClick={async () => {
                     const video = videoRef.current;
                     if (!video) return;
-                    
+
                     console.log('[Player] Video clicked, ensuring playback');
-                    
+
                     // Ensure audio context is running
                     const audioCtx = (window as any).webkitAudioContext || (window as any).AudioContext;
                     if (audioCtx && audioCtx.state === 'suspended') {
                       console.log('[Player] Resuming AudioContext');
                       await audioCtx.resume();
                     }
-                    
+
                     // Unmute if muted and user clicks
                     if (video.muted) {
                       video.muted = false;
                       setIsMuted(false);
                       console.log('[Player] Unmuted due to user interaction');
                     }
-                    
+
                     // Try to play
                     try {
                       await video.play();
@@ -872,8 +917,35 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 style={{ display: 'none' }}
               />
 
+              {/* L3 Unsupported Device Overlay (Viewer Mode) */}
+              {securityLevel === 'L3' && (
+                <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 z-20">
+                  <div className="p-4 sm:p-6 bg-[#1e1e1e]/90 border border-[#404040] rounded-lg text-center max-w-sm mx-4 backdrop-blur-sm">
+                    <div className="inline-flex items-center justify-center w-12 sm:w-14 h-12 sm:h-14 bg-[#252525] rounded-xl mb-3 border border-amber-500/30">
+                      <svg className="w-6 sm:w-7 h-6 sm:h-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-white font-bold text-sm sm:text-lg mb-2">Unsupported Device</h3>
+                    <p className="text-[#d0d0d0] text-xs sm:text-sm mb-3 leading-relaxed">
+                      This content requires <strong className="text-white">hardware-level content protection</strong> that isn't available on your current device or browser.
+                    </p>
+                    <p className="text-[#a0a0a0] text-[11px] sm:text-xs mb-3">Try on a supported device:</p>
+                    <div className="flex flex-wrap justify-center gap-1.5 sm:gap-2 mb-3">
+                      <span className="px-2 py-1 bg-[#252525] rounded-full text-[10px] sm:text-xs text-[#d0d0d0] border border-[#404040]">📱 Phone</span>
+                      <span className="px-2 py-1 bg-[#252525] rounded-full text-[10px] sm:text-xs text-[#d0d0d0] border border-[#404040]">📺 Smart TV</span>
+                      <span className="px-2 py-1 bg-[#252525] rounded-full text-[10px] sm:text-xs text-[#d0d0d0] border border-[#404040]">💻 Windows</span>
+                      <span className="px-2 py-1 bg-[#252525] rounded-full text-[10px] sm:text-xs text-[#d0d0d0] border border-[#404040]">🍎 Safari</span>
+                    </div>
+                    <p className="text-[#555] text-[9px] sm:text-[10px]">
+                      Widevine L1 required · Your device: L3 only
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Error Overlay */}
-              {(error || drmError) && (
+              {(error || drmError) && securityLevel !== 'L3' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 z-20">
                   <div className="p-4 sm:p-6 bg-[#1e1e1e]/90 border border-[#404040] rounded-lg text-center max-w-sm mx-4 backdrop-blur-sm">
                     <div className="inline-flex items-center justify-center w-10 sm:w-12 h-10 sm:h-12 bg-[#252525] rounded-xl mb-3 border border-red-500/30">
@@ -935,11 +1007,10 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                   <button
                     onClick={handleConnect}
                     disabled={isConnecting}
-                    className={`px-4 py-2.5 sm:py-3 text-[#141414] rounded-lg font-medium transition-all shadow-lg cursor-pointer min-h-[48px] ${
-                      isConnecting
+                    className={`px-4 py-2.5 sm:py-3 text-[#141414] rounded-lg font-medium transition-all shadow-lg cursor-pointer min-h-[48px] ${isConnecting
                         ? 'bg-[#404040] cursor-not-allowed opacity-75'
                         : 'bg-white hover:bg-[#e5e5e5] hover:scale-105 active:scale-95'
-                    }`}
+                      }`}
                   >
                     {isConnecting ? 'Connecting...' : 'Connect'}
                   </button>
