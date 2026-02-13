@@ -63,7 +63,7 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
 
     const crt = buildCallbackResponse(req.body, {
       licenseType: 'purchase',
-      enforce: true, // Always enforce output protection
+      enforce: false, // Don't enforce output protection for software CDMs
     });
 
     logger.info('Callback response sent', {

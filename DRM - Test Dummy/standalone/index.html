@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="../media/favicon.ico">
+    <title>castLabs WebRTC DRM</title>
+    <style>
+        body {
+            background-color: #d2232a;
+            accent-color: black;
+            margin: 0;
+        }
+
+        body, input, option, select, button {
+            font-family: monospace;
+        }
+
+        video {
+            width: 49vw;
+            object-fit: contain;
+        }
+
+        #local-video {
+            transform: scale(-1, 1);
+            -webkit-transform: scale(-1, 1);
+        }
+
+        #logo {
+            position: relative;
+            margin: 0 auto;
+            height: 10vh;
+        }
+
+        #video-container {
+            position: relative;
+            width: 100%;
+        }
+
+        #start-button {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3vh;
+            padding: 12px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+    <script type="module" src="./js/main.js"></script>
+
+    <table style="width:100%;padding-right:1em">
+        <tr>
+            <td style="text-align:left"><img src="../media/castlabs-logo.svg" id="logo"></td>
+            <td style="text-align:right"><span id="curr-latency" style="display:none">Latency: 0ms</span></td>
+        </tr>
+    </table>
+
+    <div id="drm-div">
+        <hr>
+        <table>
+            <tr>
+                <td style="text-align:right">Video Codec:</td>
+                <td style="text-align:left">
+                    <select id="video-codec" style="width:fit-content">
+                        <option selected>H264</option>
+                        <option>AV1</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td style="text-align:right">Encrypt Mode:</td>
+                <td style="text-align:left">
+                    <select id="aes-mode" style="width:fit-content" onchange="selectAesMode(this.selectedIndex)">
+                        <option>AES-CTR</option>
+                        <option selected>AES-CBC</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <td style="text-align:right">Key:</td>
+                <td style="text-align:left"><input id="key" size="37" value="3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c"></td>
+            </tr>
+            <tr id="iv-tr">
+                <td style="text-align:right">IV:</td>
+                <td style="text-align:left"><input id="iv" size="37" value="d5fbd6b82ed93e4ef98ae40931ee33b7"></td>
+            </tr>
+            <tr>
+                <td style="text-align:right">Decrypt Mode:</td>
+                <td style="text-align:left">
+                    <select id="decrypt-mode" style="width:fit-content" onchange="selectDecryptMode(this.selectedIndex)">
+                        <option>In place</option>
+                        <option>ClearKey</option>
+                        <option selected>Production DRM</option>
+                    </select>
+                </td>
+            </tr>
+            <tr id="dt-merchant-tr" style="display:none">
+                <td style="text-align:right">DRMtoday merchant:</td>
+                <td style="text-align:left"><input id="merchant" size="37" value="sb_live"></td>
+            </tr>
+            <tr id="dt-keyid-tr" style="display:none">
+                <td style="text-align:right">DRMtoday keyId:</td>
+                <td style="text-align:left"><input id="key-id" size="37" value="00000000000000000000000000000001"></td>
+            </tr>
+            <tr id="hardware-secure-tr" style="display:none">
+                <td style="text-align:right">HW-secure DRM:</td>
+                <td style="text-align:left"><input type="checkbox" id="hardware-secure" autocomplete="off"></td>
+            </tr>
+            <tr id="output-protection-tr" style="display:none">
+                <td style="text-align:right">Output protection:</td>
+                <td style="text-align:left"><input type="checkbox" id="output-protection" autocomplete="off"></td>
+            </tr>
+        </table>
+        <hr>
+    </div>
+
+    <button id="start-button" onclick="start()" disabled>Start</button>
+
+    <div id="video-container">
+        <table>
+            <tr>
+                <td><video id="local-video" playsinline autoplay style="display:none"></video></td>
+                <td><video id="remote-video" playsinline autoplay style="display:none"></video></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><audio id="remote-audio" playsinline autoplay style="display:none"></audio></td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>
