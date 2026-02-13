@@ -76,7 +76,7 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
         outputProtection: {
           digital: true,
           analogue: true,
-          enforce: true // Enable strict legacy enforcement
+          enforce: false // Set to false to allow playback on Desktop browsers (Widevine L3)
         },
         // Enhanced Output Protection config
         op: {

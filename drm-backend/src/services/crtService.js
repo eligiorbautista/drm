@@ -16,7 +16,7 @@ function buildPurchaseCrt(assetId, options = {}) {
     outputProtection = {
       digital: true,
       analogue: true,
-      enforce: true,
+      enforce: false,
     },
   } = options;
 
@@ -28,7 +28,7 @@ function buildPurchaseCrt(assetId, options = {}) {
     outputProtection: {
       digital: outputProtection.digital !== undefined ? outputProtection.digital : true,
       analogue: outputProtection.analogue !== undefined ? outputProtection.analogue : true,
-      enforce: outputProtection.enforce !== undefined ? outputProtection.enforce : true,
+      enforce: outputProtection.enforce !== undefined ? outputProtection.enforce : false,
     },
     storeLicense,
   };
@@ -48,7 +48,7 @@ function buildRentalCrt(assetId, options = {}) {
     outputProtection = {
       digital: true,
       analogue: true,
-      enforce: true,
+      enforce: false,
     },
   } = options;
 
@@ -65,7 +65,7 @@ function buildRentalCrt(assetId, options = {}) {
     outputProtection: {
       digital: outputProtection.digital !== undefined ? outputProtection.digital : true,
       analogue: outputProtection.analogue !== undefined ? outputProtection.analogue : true,
-      enforce: outputProtection.enforce !== undefined ? outputProtection.enforce : true,
+      enforce: outputProtection.enforce !== undefined ? outputProtection.enforce : false,
     },
     storeLicense,
   };
