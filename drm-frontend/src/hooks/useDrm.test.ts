@@ -12,13 +12,20 @@ vi.mock('../lib/drm', async (importOriginal) => {
   };
 });
 
-// Mock detectWidevineSecurityLevel to return 'L1' in test environment
-// (jsdom has no EME API, so it would otherwise always detect L3)
+// Mock detectHardwareSecuritySupport to return supported=true in test environment
+// (jsdom has no EME API, so it would otherwise always detect no HW security)
 vi.mock('../lib/drmUtils', async (importOriginal) => {
   const actual = await importOriginal() as any;
   return {
     ...actual,
-    detectWidevineSecurityLevel: vi.fn().mockResolvedValue('L1'),
+    detectHardwareSecuritySupport: vi.fn().mockResolvedValue({
+      supported: true,
+      details: [
+        { system: 'Widevine', hwSecure: true },
+        { system: 'PlayReady', hwSecure: false },
+        { system: 'FairPlay', hwSecure: false },
+      ]
+    }),
   };
 });
 

@@ -42,29 +42,68 @@ export function validateDrmKey(key: string | Uint8Array, expectedLength: number 
 }
 
 /**
- * Detect Widevine security level by probing for HW_SECURE_ALL robustness.
- * Works on all platforms (Android, Windows, Linux, macOS, ChromeOS).
+ * Detect if ANY DRM system on this device supports hardware-level security.
  *
- * - L1 = hardware-secure (TEE/secure hardware handles decryption)
- * - L3 = software-only (no hardware protection — HDCP enforcement impossible)
+ * Checks multiple DRM systems because a device may support L1 on one but not
+ * another. For example, Windows 11 with Edge often has PlayReady L1 (SL3000)
+ * but Widevine L3 (software-only). The rtc-drm-transform library auto-selects
+ * the best available CDM, so if PlayReady L1 works, playback is fine.
  *
- * @returns 'L1' if hardware-secure Widevine is available, 'L3' otherwise
+ * @returns Object with `supported` (true if any HW-secure DRM is available)
+ *          and `details` (which systems were checked and their results)
  */
-export async function detectWidevineSecurityLevel(): Promise<'L1' | 'L3'> {
+export async function detectHardwareSecuritySupport(): Promise<{
+    supported: boolean;
+    details: { system: string; hwSecure: boolean }[];
+}> {
     if (!navigator.requestMediaKeySystemAccess) {
-        return 'L3'; // EME not available at all
+        return { supported: false, details: [] };
     }
 
+    const checks: { system: string; keySystem: string; robustness: string }[] = [
+        {
+            system: 'Widevine',
+            keySystem: 'com.widevine.alpha',
+            robustness: 'HW_SECURE_ALL'
+        },
+        {
+            system: 'PlayReady',
+            keySystem: 'com.microsoft.playready.recommendation',
+            robustness: '3000' // PlayReady SL3000 = hardware-secure
+        },
+    ];
+
+    const details: { system: string; hwSecure: boolean }[] = [];
+
+    for (const check of checks) {
+        try {
+            await navigator.requestMediaKeySystemAccess(check.keySystem, [{
+                initDataTypes: ['cenc'],
+                videoCapabilities: [{
+                    contentType: 'video/mp4; codecs="avc1.42E01E"',
+                    robustness: check.robustness
+                }]
+            }]);
+            details.push({ system: check.system, hwSecure: true });
+        } catch {
+            details.push({ system: check.system, hwSecure: false });
+        }
+    }
+
+    // Also check FairPlay (Safari/iOS) — no robustness probing, just availability
+    // FairPlay on Apple devices is always hardware-secure
     try {
-        await navigator.requestMediaKeySystemAccess('com.widevine.alpha', [{
-            initDataTypes: ['cenc'],
+        await navigator.requestMediaKeySystemAccess('com.apple.fps.1_0', [{
+            initDataTypes: ['sinf'],
             videoCapabilities: [{
-                contentType: 'video/mp4; codecs="avc1.42E01E"',
-                robustness: 'HW_SECURE_ALL'
+                contentType: 'video/mp4; codecs="avc1.42E01E"'
             }]
         }]);
-        return 'L1';
+        details.push({ system: 'FairPlay', hwSecure: true });
     } catch {
-        return 'L3';
+        details.push({ system: 'FairPlay', hwSecure: false });
     }
+
+    const supported = details.some(d => d.hwSecure);
+    return { supported, details };
 }

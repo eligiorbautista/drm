@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useWhep } from '../hooks/useWhep';
 import { rtcDrmConfigure, rtcDrmOnTrack, rtcDrmEnvironments } from '../lib/rtc-drm-transform.min.js';
-import { hexToUint8Array, detectWidevineSecurityLevel } from '../lib/drmUtils';
+import { hexToUint8Array, detectHardwareSecuritySupport } from '../lib/drmUtils';
 import { DebugPanel } from './DebugPanel';
 
 export interface PlayerProps {
@@ -290,21 +290,23 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     } else {
       logWarning('DRM Encrypted Playback Mode DISABLED - Playing unencrypted stream');
     }
-    // --- Widevine L1 pre-flight check ---
-    // Detect security level BEFORE attempting DRM setup so we can show
-    // a friendly overlay instead of a cryptic DRM error.
+    // --- Hardware security pre-flight check ---
+    // Detect if ANY DRM system supports hardware security BEFORE attempting
+    // DRM setup so we can show a friendly overlay instead of a cryptic error.
     if (encrypted) {
       setSecurityLevel('checking');
-      const level = await detectWidevineSecurityLevel();
-      setSecurityLevel(level);
-      logDebug(`Widevine security level detected: ${level}`);
+      const { supported, details } = await detectHardwareSecuritySupport();
+      const detailStr = details.map(d => `${d.system}: ${d.hwSecure ? 'HW' : 'SW'}`).join(', ');
+      logDebug(`DRM hardware security check: ${detailStr}`);
 
-      if (level === 'L3') {
-        const msg = 'This content requires hardware-level content protection (Widevine L1). Your device only supports software-level protection (L3).';
-        logError(`[DRM] L3 detected — blocking playback: ${msg}`);
-        // Don't set drmError — we use securityLevel state for a dedicated overlay
-        return; // Abort DRM setup entirely
+      if (!supported) {
+        setSecurityLevel('L3');
+        logError(`[DRM] No DRM system supports hardware security on this device (${detailStr})`);
+        return; // Abort DRM setup — overlay will show
       }
+
+      setSecurityLevel('L1');
+      logDebug('Hardware-secure DRM available — proceeding with setup');
     }
 
     const keyId = hexToUint8Array(import.meta.env.VITE_DRM_KEY_ID);

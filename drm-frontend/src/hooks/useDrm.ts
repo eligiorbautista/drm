@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { rtcDrmConfigure, rtcDrmOnTrack, rtcDrmEnvironments } from '../lib/drm';
-import { hexToUint8Array, validateDrmKey, detectWidevineSecurityLevel } from '../lib/drmUtils';
+import { hexToUint8Array, validateDrmKey, detectHardwareSecuritySupport } from '../lib/drmUtils';
 import type { DrmConfig, TrackConfig } from '../lib/drm';
 
 export interface UseDrmOptions {
@@ -114,13 +114,14 @@ export function useDrm() {
     const { isAndroid, isFirefox, platform } = detectPlatform();
     logDebug(`Platform detected: ${platform} (isAndroid=${isAndroid}, isFirefox=${isFirefox})`);
 
-    // Detect Widevine security level (L1 = hardware-secure, L3 = software-only)
-    const securityLevel = await detectWidevineSecurityLevel();
-    logDebug(`Widevine security level: ${securityLevel}`);
+    // Detect if any DRM system supports hardware security
+    const { supported, details } = await detectHardwareSecuritySupport();
+    const detailStr = details.map(d => `${d.system}: ${d.hwSecure ? 'HW' : 'SW'}`).join(', ');
+    logDebug(`DRM hardware security check: ${detailStr}`);
 
-    if (securityLevel === 'L3') {
-      logError('[DRM] Device only supports Widevine L3 (software). L1 (hardware) is required.');
-      const err = new Error('This content requires hardware-level content protection (Widevine L1). Your device only supports software-level protection (L3).');
+    if (!supported) {
+      logError(`[DRM] No DRM system supports hardware security (${detailStr})`);
+      const err = new Error('This content requires hardware-level content protection. No compatible DRM system found on your device.');
       err.name = WIDEVINE_L3_UNSUPPORTED;
       throw err;
     }
