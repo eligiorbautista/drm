@@ -102,6 +102,15 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
     // so we only pass iv. The robustness parameter is not supported by FairPlay.
     let videoConfig: any;  // `any` because requireHDCP is used by the library but not in the TS type
 
+    // Resolve encryption mode per CDM:
+    //   - FairPlay  → always cbcs
+    //   - PlayReady → always cenc (cbcs causes requestMediaKeySystemAccess failure)
+    //   - Widevine  → uses caller's preference (default cbcs)
+    let resolvedEncryption: 'cenc' | 'cbcs' = encryptionMode;
+    if (capability.selectedDrmType === 'PlayReady') {
+        resolvedEncryption = 'cenc';
+    }
+
     if (platform.isIOS) {
         videoConfig = {
             codec: 'H264' as const,
@@ -113,7 +122,7 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
         // Widevine/PlayReady: explicit keyId + iv + HW-only robustness
         videoConfig = {
             codec: 'H264' as const,
-            encryption: encryptionMode as 'cenc' | 'cbcs',
+            encryption: resolvedEncryption,
             robustness: 'HW' as const,    // Only L1/hardware — L3 devices are blocked upstream
             keyId,
             iv,
