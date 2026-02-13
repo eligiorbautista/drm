@@ -293,9 +293,11 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     // --- Hardware security pre-flight check ---
     // Detect if ANY DRM system supports hardware security BEFORE attempting
     // DRM setup so we can show a friendly overlay instead of a cryptic error.
+    let hwSecurityDetails: { system: string; hwSecure: boolean }[] = [];
     if (encrypted) {
       setSecurityLevel('checking');
       const { supported, details } = await detectHardwareSecuritySupport();
+      hwSecurityDetails = details;
       const detailStr = details.map(d => `${d.system}: ${d.hwSecure ? 'HW' : 'SW'}`).join(', ');
       logDebug(`DRM hardware security check: ${detailStr}`);
 
@@ -494,35 +496,39 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       detectedPlatform
     })}`);
 
-    // Add DRM type based on platform for proper license request handling
-    // This is especially important for Callback Authorization
+    // Add DRM type based on platform AND hardware security support.
+    // The DRM library needs a `type` hint to know which CDM to use.
+    // 
+    // IMPORTANT: On Windows, Widevine is often L3 (software) while PlayReady
+    // is L1 (hardware). If we blindly set type='Widevine', the library won't
+    // try PlayReady and playback will fail. So we check which CDM actually
+    // has hardware support and prefer that one.
     if (isIOS || isSafari) {
-      // iOS Safari and macOS Safari use FairPlay
       drmConfig.type = 'FairPlay';
       logDebug('Setting DRM type to FairPlay for iOS/Safari');
-    } else if (isChrome || isEdge) {
-      // Chrome and Edge (on all desktop platforms) use Widevine
-      drmConfig.type = 'Widevine';
-      logDebug(`Setting DRM type to Widevine for ${detectedPlatform}`);
-    } else if (isAndroid) {
-      // Android uses Widevine (L1 hardware or L3 software)
-      drmConfig.type = 'Widevine';
-      logDebug('Setting DRM type to Widevine for Android');
-    } else if (isWindows) {
-      // Windows supports both Widevine and PlayReady via Chrome/Edge, using Widevine here
-      drmConfig.type = 'Widevine';
-      logDebug('Setting DRM type to Widevine for Windows');
-    } else if (isFirefox) {
-      // Firefox uses Widevine (even when running on macOS/Linux)
-      drmConfig.type = 'Widevine';
-      logDebug('Setting DRM type to Widevine for Firefox');
     } else {
-      // Default fallback: Linux, unknown platforms - use Widevine
-      drmConfig.type = 'Widevine';
-      logDebug(`Setting DRM type to Widevine for ${detectedPlatform} (default)`);
+      // Use hardware security detection results (from the pre-flight check above)
+      // to pick the best CDM. This avoids a redundant EME probe.
+      const widevineHW = hwSecurityDetails.find(d => d.system === 'Widevine')?.hwSecure ?? false;
+      const playreadyHW = hwSecurityDetails.find(d => d.system === 'PlayReady')?.hwSecure ?? false;
+
+      if (widevineHW) {
+        // Widevine has HW support — use it (works on Android, ChromeOS, some Windows)
+        drmConfig.type = 'Widevine';
+        logDebug(`Setting DRM type to Widevine (HW-secure) for ${detectedPlatform}`);
+      } else if (playreadyHW) {
+        // PlayReady has HW support but Widevine doesn't — use PlayReady
+        // Common on Windows 11 with Edge where Widevine=L3, PlayReady=SL3000
+        drmConfig.type = 'PlayReady';
+        logDebug(`Setting DRM type to PlayReady (HW-secure, Widevine is SW-only) for ${detectedPlatform}`);
+      } else {
+        // No HW support detected — default to Widevine (shouldn't reach here
+        // if the L1 check above blocked, but just in case)
+        drmConfig.type = 'Widevine';
+        logDebug(`Setting DRM type to Widevine (default fallback) for ${detectedPlatform}`);
+      }
     }
 
-    logDebug(`Final DRM config type: ${drmConfig.type}`);
 
     // Add FairPlay-specific configuration for iOS/Safari
     if (isIOS || isSafari) {
