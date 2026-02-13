@@ -236,7 +236,9 @@ export async function checkEmeAvailability(
  * @returns Object with `supported` (true if any HW-secure DRM is available)
  *          and `details` (which systems were checked and their results)
  */
-export async function detectHardwareSecuritySupport(): Promise<{
+export async function detectHardwareSecuritySupport(
+    encryptionScheme: 'cenc' | 'cbcs' = 'cbcs'
+): Promise<{
     supported: boolean;
     details: DrmSecurityDetail[];
 }> {
@@ -266,6 +268,7 @@ export async function detectHardwareSecuritySupport(): Promise<{
                 videoCapabilities: [{
                     contentType: 'video/mp4; codecs="avc1.42E01E"',
                     robustness: check.robustness,
+                    encryptionScheme // Check specific encryption support (e.g. cbcs)
                 }],
             }]);
             details.push({ system: check.system, hwSecure: true });
@@ -273,6 +276,7 @@ export async function detectHardwareSecuritySupport(): Promise<{
             details.push({ system: check.system, hwSecure: false });
         }
     }
+
 
     // FairPlay (Safari/iOS) — no robustness probing needed.
     // FairPlay on Apple devices is ALWAYS hardware-secure by design.

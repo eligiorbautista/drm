@@ -65,17 +65,18 @@ export interface DrmCapabilityResult {
  * @returns Full capability result with CDM selection and security level
  */
 export async function detectDrmCapability(
-    logDebug?: (msg: string) => void
+    logDebug: (msg: string) => void,
+    encryptionScheme: 'cenc' | 'cbcs' = 'cbcs'
 ): Promise<DrmCapabilityResult> {
     const log = logDebug || (() => { });
 
     // ── Step 1: Detect platform ───────────────────────────────────────────
     const platform = detectPlatform();
-    log(`Platform detected: ${platform.detectedPlatform} (isAndroid=${platform.isAndroid}, isFirefox=${platform.isFirefox}, isIOS=${platform.isIOS}, isSafari=${platform.isSafari})`);
+    logDebug(`Platform detected (for DRM selection): ${platform.detectedPlatform}`);
 
     // ── Step 2: Check EME availability ────────────────────────────────────
     // EME can be blocked in cross-origin iframes without allow="encrypted-media"
-    const emeCheck = await checkEmeAvailability(log);
+    const emeCheck = await checkEmeAvailability(logDebug);
     if (!emeCheck.available) {
         log(`EME check failed: ${emeCheck.reason}`);
         return {
@@ -95,7 +96,7 @@ export async function detectDrmCapability(
     //   - Windows 11 + Edge: PlayReady=L1 (SL3000), Widevine=L3 (software)
     //   - Android + Chrome: Widevine=L1 (HW_SECURE_ALL)
     //   - iOS + Safari: FairPlay=L1 (always hardware on Apple silicon)
-    const { supported, details } = await detectHardwareSecuritySupport();
+    const { supported, details } = await detectHardwareSecuritySupport(encryptionScheme);
     const detailStr = details.map(d => `${d.system}: ${d.hwSecure ? 'HW' : 'SW'}`).join(', ');
     log(`DRM hardware security check: ${detailStr}`);
 
