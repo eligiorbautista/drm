@@ -76,7 +76,7 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
         outputProtection: {
           digital: true,
           analogue: true,
-          enforce: false // Set to false to allow Enhanced Output Protection (op) to take precedence
+          enforce: true // Enable strict legacy enforcement
         },
         // Enhanced Output Protection config
         op: {
