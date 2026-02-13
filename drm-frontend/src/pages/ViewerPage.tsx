@@ -1,9 +1,14 @@
 import { useState } from 'react';
 import { Player } from '../components/Player';
 import { useEncryption } from '../App';
+import { useAuth } from '../context/AuthContext';
 
 export function ViewerPage({ isEmbedMode }: { isEmbedMode?: boolean } = {}) {
   const { enabled: encryptedFromSettings, loading: encryptionLoading, error: encryptionError } = useEncryption();
+  const { user } = useAuth();
+
+  // Use authenticated user info if available, otherwise fallback to default
+  const userId = user?.email || user?.id || 'elidev-test';
 
   // State for WHEP endpoint
   const streamDomain = import.meta.env.VITE_CLOUDFLARE_STREAM_DOMAIN;
@@ -16,7 +21,8 @@ export function ViewerPage({ isEmbedMode }: { isEmbedMode?: boolean } = {}) {
     baseSetting: encryptedFromSettings,
     encryptionLoading,
     encryptionError,
-    isEmbedMode
+    isEmbedMode,
+    userId
   });
 
   // In embed mode, render just the player without wrapper for full viewport
@@ -25,7 +31,7 @@ export function ViewerPage({ isEmbedMode }: { isEmbedMode?: boolean } = {}) {
       <Player
         endpoint={whepEndpoint}
         merchant={merchant}
-        userId="elidev-test"
+        userId={userId}
         encrypted={encryptedFromSettings}
         isEmbedMode={isEmbedMode}
       />
@@ -37,7 +43,7 @@ export function ViewerPage({ isEmbedMode }: { isEmbedMode?: boolean } = {}) {
       <Player
         endpoint={whepEndpoint}
         merchant={merchant}
-        userId="elidev-test"
+        userId={userId}
         encrypted={encryptedFromSettings}
         isEmbedMode={isEmbedMode}
       />
@@ -98,7 +104,7 @@ export function ViewerPage({ isEmbedMode }: { isEmbedMode?: boolean } = {}) {
                       <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
-                      Token: <span className="text-[#d0d0d0]">Auto-generated</span>
+                      UserId: <span className="text-[#d0d0d0]">{userId}</span>
                     </p>
                   </div>
                   <div className="text-xs text-[#a0a0a0] bg-[#252525] p-2 rounded">
@@ -119,6 +125,7 @@ export function ViewerPage({ isEmbedMode }: { isEmbedMode?: boolean } = {}) {
                 mode: 'viewer',
                 endpoint: whepEndpoint,
                 merchant,
+                userId,
                 encrypted: encryptedFromSettings,
                 encryptionMode: encryptedFromSettings ? 'cbcs' : undefined,
                 keys: encryptedFromSettings ? 'From .env' : undefined,

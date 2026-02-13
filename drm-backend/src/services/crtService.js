@@ -24,9 +24,6 @@ const { DRM_SCHEMES } = require('../utils/constants');
  * @param {object} [options] - Optional CRT parameters
  * @param {boolean} [options.storeLicense=true] - Whether to persist the license
  * @param {object} [options.outputProtection] - Output protection settings
- * @param {boolean} [options.outputProtection.digital=true] - Digital output protection
- * @param {boolean} [options.outputProtection.analogue=true] - Analogue output protection
- * @param {boolean} [options.outputProtection.enforce=false] - Enforce output protection
  * @returns {object} Customer Rights Token
  */
 function buildPurchaseCrt(assetId, options = {}) {
@@ -40,9 +37,7 @@ function buildPurchaseCrt(assetId, options = {}) {
   } = options;
 
   const crt = {
-    profile: {
-      purchase: {},
-    },
+    type: 'purchase',
     assetId,
     outputProtection,
     storeLicense,
@@ -76,12 +71,9 @@ function buildRentalCrt(assetId, options = {}) {
   } = options;
 
   const crt = {
-    profile: {
-      rental: {
-        relativeExpiration,
-        playDuration,
-      },
-    },
+    type: 'rental',
+    relativeExpiration,
+    playDuration,
     assetId,
     outputProtection,
     storeLicense,

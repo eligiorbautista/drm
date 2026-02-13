@@ -458,7 +458,35 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       video: videoConfig,
       audio: { codec: 'opus' as const, encryption: 'clear' as const },
       logLevel: 3,
-      mediaBufferMs
+      mediaBufferMs,
+      // Intercept license requests for debugging
+      onFetch: async (url: string, opts: any) => {
+        logDebug(`[DRM Fetch] Requesting: ${url}`);
+        logDebug(`[DRM Fetch] Method: ${opts.method}`);
+        if (opts.body) {
+          logDebug(`[DRM Fetch] Body size: ${opts.body.byteLength || opts.body.length} bytes`);
+        }
+        try {
+          const response = await fetch(url, opts);
+          logDebug(`[DRM Fetch] Response status: ${response.status} ${response.statusText}`);
+          
+          // Check for x-dt-client-info header (Base64 JSON)
+          const clientInfo = response.headers.get('x-dt-client-info');
+          if (clientInfo) {
+            try {
+              const decoded = JSON.parse(atob(clientInfo));
+              logDebug(`[DRM Fetch] Client Info from header: ${JSON.stringify(decoded)}`);
+            } catch (e) {
+              logDebug(`[DRM Fetch] Could not decode x-dt-client-info header`);
+            }
+          }
+          
+          return response;
+        } catch (err: any) {
+          logError(`[DRM Fetch] Network error: ${err.message}`);
+          throw err;
+        }
+      }
     };
 
     logDebug(`Final video config: ${JSON.stringify({

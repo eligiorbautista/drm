@@ -99,7 +99,7 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
       // Widevine DRM (used by Chrome, Firefox, Edge, Android)
       // secLevel 1 = L1 (hardware, secure, HDCP-capable)
       // secLevel 3 = L3 (software) - can use HDCP_NONE for SD, HDCP_V1 for HD with proper template
-      if (drmScheme === 'WIDEVINE_MODULAR') {
+      if (drmScheme === 'WIDEVINE_MODULAR' || drmScheme === 'WIDEVINE') {
         if (secLevel === 1) {
           templateId = TEMPLATE_IDS.HARDWARE_SECURE;
           logger.info('Hardware-secure Widevine L1 detected - using strict HDCP template', { secLevel, templateId });
@@ -148,7 +148,7 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
       // Determine DRM-specific configuration (e.g., WidevineM, PlayReadyM, FairPlayM)
       let drmModuleKey = '*'; // Default to wildcard for all DRM schemes
 
-      if (drmScheme === 'WIDEVINE_MODULAR') {
+      if (drmScheme === 'WIDEVINE_MODULAR' || drmScheme === 'WIDEVINE') {
         drmModuleKey = 'WidevineM';
       } else if (drmScheme === 'PLAYREADY') {
         drmModuleKey = 'PlayReadyM';
@@ -162,41 +162,31 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
       const enhanceOutputProtection = {
         op: {
           config: {
-            UHD: {
-              [drmModuleKey]: {
-                requireHDCP: 'HDCP_NONE',  // No HDCP required for software CDMs
-              }
-            },
-            HD: {
-              [drmModuleKey]: {
-                requireHDCP: 'HDCP_NONE'
-              }
-            },
-            SD: {
-              [drmModuleKey]: {
-                requireHDCP: 'HDCP_NONE'
-              }
-            },
-            AUDIO: {
-              [drmModuleKey]: {
-                requireHDCP: 'HDCP_NONE'
-              }
-            }
+            UHD: { [drmModuleKey]: { requireHDCP: 'HDCP_NONE' } },
+            HD: { [drmModuleKey]: { requireHDCP: 'HDCP_NONE' } },
+            SD: { [drmModuleKey]: { requireHDCP: 'HDCP_NONE' } },
+            AUDIO: { [drmModuleKey]: { requireHDCP: 'HDCP_NONE' } }
           }
         }
       };
 
-      // Build CRT with Enhanced Output Protection
-      crt = {
-        profile: {
-          purchase: {}
-        },
-        assetId: asset,
-        ...enhanceOutputProtection
-      };
+      // Build CRT using the service for consistency
+      // Fallback to DEFAULT_ASSET_ID if asset is missing from callback
+      const targetAssetId = asset || env.DEFAULT_ASSET_ID;
+      
+      crt = buildPurchaseCrt(targetAssetId, {
+        outputProtection: {
+          digital: true,
+          analogue: true,
+          enforce: false
+        }
+      });
 
-      logger.info('Using inline Enhanced Output Protection', {
-        asset,
+      // Merge Enhanced Output Protection into CRT
+      Object.assign(crt, enhanceOutputProtection);
+
+      logger.info('Using inline Enhanced Output Protection (Modern CRT)', {
+        asset: targetAssetId,
         user,
         drmScheme,
         secLevel,
