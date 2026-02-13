@@ -111,7 +111,9 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
         resolvedEncryption = 'cenc';
     }
 
-    if (platform.isIOS) {
+    if (platform.isIOS || platform.isSafari) {
+        // FairPlay (iOS + macOS Safari): keyId is extracted from the SKD URL
+        // by the CDM, so we only pass iv. Robustness is not supported.
         videoConfig = {
             codec: 'H264' as const,
             encryption: 'cbcs' as const,  // FairPlay always uses cbcs

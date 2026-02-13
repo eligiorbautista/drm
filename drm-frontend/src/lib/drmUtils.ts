@@ -112,8 +112,11 @@ export function detectPlatform(): PlatformInfo {
 
     // --- Derived boolean flags ---
 
-    // iOS: check UA or navigator.platform (iPads report "MacIntel")
-    const isIOS = uaHasIOS || platform.toLowerCase() === 'ios';
+    // iOS: check UA, navigator.platform, or iPadOS 13+ (reports "MacIntel" with touch)
+    // iPadOS 13+ on Safari: platform is "MacIntel" but maxTouchPoints > 0
+    const isIPadOS = !uaHasIOS && /macintosh|macintel/i.test(platform)
+        && navigator.maxTouchPoints > 0 && uaHasSafari;
+    const isIOS = uaHasIOS || platform.toLowerCase() === 'ios' || isIPadOS;
 
     // Safari: must be real Safari, not Chrome/Edge disguised as Safari
     const isSafari = uaHasSafari && !uaHasEdge;
