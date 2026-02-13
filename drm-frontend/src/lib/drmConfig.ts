@@ -102,15 +102,6 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
     // so we only pass iv. The robustness parameter is not supported by FairPlay.
     let videoConfig: any;  // `any` because requireHDCP is used by the library but not in the TS type
 
-    // Resolve encryption mode per CDM:
-    //   - FairPlay  → always cbcs
-    //   - PlayReady → always cenc (cbcs causes requestMediaKeySystemAccess failure)
-    //   - Widevine  → uses caller's preference (default cbcs)
-    let resolvedEncryption: 'cenc' | 'cbcs' = encryptionMode;
-    if (capability.selectedDrmType === 'PlayReady') {
-        resolvedEncryption = 'cenc';
-    }
-
     if (platform.isIOS || platform.isSafari) {
         // FairPlay (iOS + macOS Safari): keyId is extracted from the SKD URL
         // by the CDM, so we only pass iv. Robustness is not supported.
@@ -124,7 +115,7 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
         // Widevine/PlayReady: explicit keyId + iv + HW-only robustness
         videoConfig = {
             codec: 'H264' as const,
-            encryption: resolvedEncryption,
+            encryption: encryptionMode as 'cenc' | 'cbcs',
             robustness: 'HW' as const,    // Only L1/hardware — L3 devices are blocked upstream
             keyId,
             iv,
@@ -154,6 +145,23 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
             : 'Staging'
     ];
 
+    // ── DRM type selection ────────────────────────────────────────────────
+    // IMPORTANT: Only force the CDM type when it's unambiguous. On Windows,
+    // the library must auto-detect because:
+    //   - PlayReady has L1 (SL3000) but may not support cbcs encryption
+    //   - Widevine has L3 but supports cbcs
+    //   - The library internally picks the CDM that works with the encryption
+    // The old working code (useDrm.ts) only set type for Android and Firefox.
+    let drmType: string | undefined;
+    if (platform.isIOS || platform.isSafari) {
+        drmType = 'FairPlay';
+    } else if (platform.isAndroid) {
+        drmType = 'Widevine';
+    } else if (platform.isFirefox) {
+        drmType = 'Widevine';
+    }
+    // Windows / other: leave undefined → library auto-selects
+
     // ── Build final config ────────────────────────────────────────────────
     // CALLBACK AUTHORIZATION MODE:
     // DRMtoday calls our backend at /api/callback to get the CRT.
@@ -169,8 +177,12 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
         audio: { codec: 'opus' as const, encryption: 'clear' as const },
         logLevel: 3,
         mediaBufferMs,
-        type: capability.selectedDrmType,
     };
+
+    // Only set type when we know which CDM to use — otherwise let the library auto-detect
+    if (drmType) {
+        config.type = drmType;
+    }
 
     // Attach fetch interceptor if provided (for debugging license requests)
     if (onFetch) {
