@@ -115,7 +115,7 @@ function buildCallbackResponse(callbackPayload, options = {}) {
     licenseType = 'purchase',
     relativeExpiration,
     playDuration,
-    enforce = false,
+    enforce = true,
   } = options;
 
   const assetId = Array.isArray(callbackPayload.asset) 
