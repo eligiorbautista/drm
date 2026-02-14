@@ -146,21 +146,11 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
     ];
 
     // ── DRM type selection ────────────────────────────────────────────────
-    // IMPORTANT: Only force the CDM type when it's unambiguous. On Windows,
-    // the library must auto-detect because:
-    //   - PlayReady has L1 (SL3000) but may not support cbcs encryption
-    //   - Widevine has L3 but supports cbcs
-    //   - The library internally picks the CDM that works with the encryption
-    // The old working code (useDrm.ts) only set type for Android and Firefox.
-    let drmType: string | undefined;
-    if (platform.isIOS || platform.isSafari) {
-        drmType = 'FairPlay';
-    } else if (platform.isAndroid) {
-        drmType = 'Widevine';
-    } else if (platform.isFirefox) {
-        drmType = 'Widevine';
-    }
-    // Windows / other: leave undefined → library auto-selects
+    // Use the CDM type that our capability pipeline already confirmed has
+    // hardware-level support. This avoids the library's own CDM probing,
+    // which can try Widevine first on Edge (fails with com.widevine.alpha.experiment)
+    // and break video track routing even though PlayReady L1 is available.
+    const drmType: string = capability.selectedDrmType;
 
     // ── Build final config ────────────────────────────────────────────────
     // CALLBACK AUTHORIZATION MODE:
@@ -179,10 +169,8 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
         mediaBufferMs,
     };
 
-    // Only set type when we know which CDM to use — otherwise let the library auto-detect
-    if (drmType) {
-        config.type = drmType;
-    }
+    // Always set the CDM type — our pipeline guarantees a selection
+    config.type = drmType;
 
     // Attach fetch interceptor if provided (for debugging license requests)
     if (onFetch) {
