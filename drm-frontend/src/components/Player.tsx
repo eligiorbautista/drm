@@ -259,7 +259,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     // Returns security level, selected CDM type, and block reason if any.
     if (encrypted) {
       setSecurityLevel('checking');
-      const capability = await detectDrmCapability(logDebug, 'cbcs');
+      const capability = await detectDrmCapability(logDebug);
 
       if (!capability.supported) {
         // ── Step 3: Blocked — show fallback overlay ─────────────────────

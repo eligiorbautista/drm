@@ -306,17 +306,21 @@ export async function detectHardwareSecuritySupport(
  * Used by the platform-first pipeline in `drmCapability.ts` to walk the
  * candidate list one-at-a-time, stopping at the first HW-backed match.
  *
+ * IMPORTANT: This probe intentionally does NOT include `encryptionScheme`
+ * (e.g. 'cbcs' or 'cenc'). Including it causes false negatives — for example,
+ * PlayReady SL3000 on Windows/Edge fails the probe when `encryptionScheme: 'cbcs'`
+ * is specified, even though the device fully supports L1 hardware DRM.
+ * The encryption scheme is a config concern handled by `buildDrmConfig()`.
+ *
  * @param keySystem  - EME key system string (e.g. 'com.widevine.alpha')
  * @param robustness - HW robustness level (e.g. 'HW_SECURE_ALL', '3000', or '' for FairPlay)
  * @param initDataTypes - Init data types to probe with (e.g. ['cenc'] or ['sinf'])
- * @param encryptionScheme - Encryption scheme to probe ('cenc' or 'cbcs')
  * @returns true if the key system supports the requested robustness level
  */
 export async function probeHardwareSecurity(
     keySystem: string,
     robustness: string,
     initDataTypes: string[],
-    encryptionScheme: 'cenc' | 'cbcs' = 'cbcs',
 ): Promise<boolean> {
     if (!navigator.requestMediaKeySystemAccess) {
         return false;
@@ -330,10 +334,6 @@ export async function probeHardwareSecurity(
         if (robustness) {
             videoCapability.robustness = robustness;
         }
-        // Only set encryptionScheme for non-FairPlay (FairPlay uses 'sinf' initDataType)
-        if (!initDataTypes.includes('sinf')) {
-            videoCapability.encryptionScheme = encryptionScheme;
-        }
 
         await navigator.requestMediaKeySystemAccess(keySystem, [{
             initDataTypes,
@@ -344,3 +344,4 @@ export async function probeHardwareSecurity(
         return false;
     }
 }
+

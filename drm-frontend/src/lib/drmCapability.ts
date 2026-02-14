@@ -164,12 +164,10 @@ export function getPlatformDrmCandidates(platform: PlatformInfo): DrmSchemeCandi
  *   5. If none qualify → supported=false, blockReason="Device is not supported".
  *
  * @param logDebug - Optional logging callback for debug output
- * @param encryptionScheme - Encryption scheme to probe ('cenc' or 'cbcs')
  * @returns Full capability result with CDM selection and security level
  */
 export async function detectDrmCapability(
     logDebug: (msg: string) => void,
-    encryptionScheme: 'cenc' | 'cbcs' = 'cbcs'
 ): Promise<DrmCapabilityResult> {
     const log = logDebug || (() => { });
 
@@ -209,7 +207,6 @@ export async function detectDrmCapability(
             candidate.keySystem,
             candidate.hwRobustness,
             candidate.initDataTypes,
-            encryptionScheme,
         );
 
         evaluatedCandidates.push({ drmType: candidate.drmType, hwSecure });
