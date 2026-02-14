@@ -171,7 +171,7 @@ describe('detectDrmCapability', () => {
         emeAvailable = true,
     ) {
         mockProbe = vi.fn();
-        probeResults.forEach((result, i) => {
+        probeResults.forEach((result) => {
             mockProbe.mockResolvedValueOnce(result);
         });
         mockEmeCheck = vi.fn().mockResolvedValue({
