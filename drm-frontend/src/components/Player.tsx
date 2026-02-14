@@ -269,7 +269,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         const errMsg = capability.blockReason || 'No hardware-backed DRM available';
         logError(`[DRM] ${errMsg}`);
         setDrmError(errMsg);
-        return; // Abort DRM setup — L3 overlay will show
+        throw new Error(errMsg); // Abort entire connection — L3 overlay will show
       }
 
       setSecurityLevel('L1');
@@ -341,11 +341,19 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
    * Initiates connection to the stream, optionally with DRM configuration.
    */
   const handleConnect = async () => {
-    await connect({
-      endpoint,
-      encrypted,
-      configureDrm: encrypted ? configureDrm : undefined
-    }, videoRef.current, audioRef.current);
+    try {
+      await connect({
+        endpoint,
+        encrypted,
+        configureDrm: encrypted ? configureDrm : undefined
+      }, videoRef.current, audioRef.current);
+    } catch (err: any) {
+      // DRM detection failures are already handled by the L3 overlay —
+      // don't let them clobber the UI with a generic connection error
+      if (securityLevel === 'L3') return;
+      // Re-throw unexpected errors so useWhep's catch can handle them
+      throw err;
+    }
   };
 
   /**
