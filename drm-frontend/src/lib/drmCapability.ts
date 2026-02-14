@@ -1,10 +1,12 @@
 /**
- * DRM Capability Detection Module
+ * DRM Capability Detection Module — Mobile-First, Hardware-Only
  *
- * Orchestrates the full DRM capability detection pipeline:
- *   1. EME availability check (catches iframe permission issues)
- *   2. Hardware security probe (Widevine L1, PlayReady SL3000, FairPlay)
- *   3. CDM type selection (picks the best available hardware-secure CDM)
+ * Platform-first evaluation pipeline:
+ *   1. Detect platform (Android / iOS / Windows / other)
+ *   2. Check EME availability (catches iframe permission issues)
+ *   3. Get ordered DRM candidates for the platform
+ *   4. Walk candidates: probe HW security one-at-a-time, stop at first match
+ *   5. If no HW-backed candidate found → block with "Device is not supported"
  *
  * This module is shared between /viewer and /embed players so that both
  * use identical detection logic.
@@ -12,8 +14,8 @@
 
 import {
     checkEmeAvailability,
-    detectHardwareSecuritySupport,
     detectPlatform,
+    probeHardwareSecurity,
     type PlatformInfo,
     type DrmSecurityDetail,
 } from './drmUtils';
@@ -27,6 +29,24 @@ export type DrmType = 'Widevine' | 'PlayReady' | 'FairPlay';
 
 /** Security level the device supports. */
 export type SecurityLevel = 'L1' | 'L3' | 'checking';
+
+/** One candidate DRM scheme in the platform priority chain. */
+export interface DrmSchemeCandidate {
+    /** DRM type name used by the rtc-drm-transform library. */
+    drmType: DrmType;
+    /** EME key system string. */
+    keySystem: string;
+    /** HW robustness level to require (e.g. 'HW_SECURE_ALL', '3000', or '' for FairPlay). */
+    hwRobustness: string;
+    /** Init data types for the EME probe (e.g. ['cenc'] or ['sinf']). */
+    initDataTypes: string[];
+}
+
+/** Result of probing one candidate. */
+export interface EvaluatedCandidate {
+    drmType: DrmType;
+    hwSecure: boolean;
+}
 
 /** Full result of DRM capability detection. */
 export interface DrmCapabilityResult {
@@ -45,9 +65,84 @@ export interface DrmCapabilityResult {
     platform: PlatformInfo;
     /**
      * If `supported` is false, a human-readable explanation of why
-     * playback is blocked (e.g., "only Widevine L3 available").
+     * playback is blocked (e.g., "Device is not supported").
      */
     blockReason?: string;
+    /** Candidates evaluated in priority order with their HW probe results. */
+    evaluatedCandidates: EvaluatedCandidate[];
+}
+
+// ---------------------------------------------------------------------------
+// Platform → DRM Candidate Mapping
+// ---------------------------------------------------------------------------
+
+/**
+ * Return ordered DRM candidates for the given platform.
+ *
+ * This is the **single source of truth** for which DRM schemes to try
+ * and in what order. Mobile platforms are listed first because mobile
+ * detection takes priority in `detectPlatform()`.
+ *
+ * To add a new DRM scheme or platform, append to the appropriate list.
+ *
+ * Decision table:
+ *
+ * | Platform         | Priority | DRM       | HW Requirement       |
+ * |------------------|----------|-----------|----------------------|
+ * | Android          | 1        | Widevine  | L1 (HW_SECURE_ALL)   |
+ * | Android          | 2        | PlayReady | SL3000               |
+ * | iOS / Safari     | 1        | FairPlay  | HW (always)          |
+ * | Windows (Edge)   | 1        | PlayReady | SL3000               |
+ * | Windows (Edge)   | 2        | Widevine  | L1 (HW_SECURE_ALL)   |
+ * | Windows (Chrome) | 1        | Widevine  | L1 (HW_SECURE_ALL)   |
+ * | Windows (Chrome) | 2        | PlayReady | SL3000               |
+ * | Other            | 1        | Widevine  | L1 (HW_SECURE_ALL)   |
+ * | Other            | 2        | PlayReady | SL3000               |
+ */
+export function getPlatformDrmCandidates(platform: PlatformInfo): DrmSchemeCandidate[] {
+    const widevineL1: DrmSchemeCandidate = {
+        drmType: 'Widevine',
+        keySystem: 'com.widevine.alpha',
+        hwRobustness: 'HW_SECURE_ALL',
+        initDataTypes: ['cenc'],
+    };
+
+    const playreadySL3000: DrmSchemeCandidate = {
+        drmType: 'PlayReady',
+        keySystem: 'com.microsoft.playready.recommendation',
+        hwRobustness: '3000',
+        initDataTypes: ['cenc'],
+    };
+
+    const fairplayHW: DrmSchemeCandidate = {
+        drmType: 'FairPlay',
+        keySystem: 'com.apple.fps.1_0',
+        hwRobustness: '',           // FairPlay is always HW on Apple silicon
+        initDataTypes: ['sinf'],
+    };
+
+    // ── Mobile-first: detect Android/iOS before anything else ─────────
+    if (platform.isIOS || platform.isSafari) {
+        return [fairplayHW];
+    }
+
+    if (platform.isAndroid) {
+        return [widevineL1, playreadySL3000];
+    }
+
+    // ── Desktop / other ───────────────────────────────────────────────
+    if (platform.isWindows && platform.isEdge) {
+        // Windows + Edge: PlayReady SL3000 is the native, preferred CDM
+        return [playreadySL3000, widevineL1];
+    }
+
+    if (platform.isWindows) {
+        // Windows + Chrome or other Chromium: try Widevine first
+        return [widevineL1, playreadySL3000];
+    }
+
+    // Linux, ChromeOS, other
+    return [widevineL1, playreadySL3000];
 }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +156,15 @@ export interface DrmCapabilityResult {
  * `supported === false`, show the fallback overlay and do NOT proceed
  * with DRM setup.
  *
+ * Pipeline:
+ *   1. Detect platform (mobile-first: Android/iOS before desktop).
+ *   2. Check EME availability (catches iframe permission blocks).
+ *   3. Get ordered DRM candidates for the platform.
+ *   4. Walk candidates one-at-a-time: probe HW security, stop on first match.
+ *   5. If none qualify → supported=false, blockReason="Device is not supported".
+ *
  * @param logDebug - Optional logging callback for debug output
+ * @param encryptionScheme - Encryption scheme to probe ('cenc' or 'cbcs')
  * @returns Full capability result with CDM selection and security level
  */
 export async function detectDrmCapability(
@@ -70,106 +173,115 @@ export async function detectDrmCapability(
 ): Promise<DrmCapabilityResult> {
     const log = logDebug || (() => { });
 
-    // ── Step 1: Detect platform ───────────────────────────────────────────
+    // ── Step 1: Detect platform (mobile-first) ───────────────────────────
     const platform = detectPlatform();
-    logDebug(`Platform detected (for DRM selection): ${platform.detectedPlatform}`);
+    log(`Platform detected: ${platform.detectedPlatform} (mobile: ${platform.isMobile})`);
 
     // ── Step 2: Check EME availability ────────────────────────────────────
-    // EME can be blocked in cross-origin iframes without allow="encrypted-media"
     const emeCheck = await checkEmeAvailability(logDebug);
     if (!emeCheck.available) {
         log(`EME check failed: ${emeCheck.reason}`);
+        const candidates = getPlatformDrmCandidates(platform);
         return {
             supported: false,
             securityLevel: 'L3',
-            selectedDrmType: selectDrmTypeForPlatform(platform, []),
+            selectedDrmType: candidates[0]?.drmType ?? 'Widevine',
             hwDetails: [],
             platform,
             blockReason: emeCheck.reason,
+            evaluatedCandidates: [],
         };
     }
     log('EME availability check passed');
 
-    // ── Step 3: Probe hardware security for all DRM systems ───────────────
-    // We probe Widevine (HW_SECURE_ALL), PlayReady (SL3000), and FairPlay.
-    // A device may support L1 on one CDM but L3 on another. For example:
-    //   - Windows 11 + Edge: PlayReady=L1 (SL3000), Widevine=L3 (software)
-    //   - Android + Chrome: Widevine=L1 (HW_SECURE_ALL)
-    //   - iOS + Safari: FairPlay=L1 (always hardware on Apple silicon)
-    const { supported, details } = await detectHardwareSecuritySupport(encryptionScheme);
-    const detailStr = details.map(d => `${d.system}: ${d.hwSecure ? 'HW' : 'SW'}`).join(', ');
-    log(`DRM hardware security check: ${detailStr}`);
+    // ── Step 3: Get ordered candidates for this platform ──────────────────
+    const candidates = getPlatformDrmCandidates(platform);
+    const candidateNames = candidates.map(c => c.drmType).join(' → ');
+    log(`DRM candidate priority chain: ${candidateNames}`);
 
-    if (!supported) {
-        // BLOCKED: No DRM system supports hardware security.
-        // This means the device only has Widevine L3 (software) or no DRM at all.
-        // We do NOT allow software-based DRM — it can be trivially bypassed.
-        log(`No DRM system supports hardware security on this device (${detailStr})`);
+    // ── Step 4: Walk candidates — probe HW security one-at-a-time ────────
+    const evaluatedCandidates: EvaluatedCandidate[] = [];
+    const hwDetails: DrmSecurityDetail[] = [];
+    let selectedCandidate: DrmSchemeCandidate | null = null;
+
+    for (const candidate of candidates) {
+        const hwSecure = await probeHardwareSecurity(
+            candidate.keySystem,
+            candidate.hwRobustness,
+            candidate.initDataTypes,
+            encryptionScheme,
+        );
+
+        evaluatedCandidates.push({ drmType: candidate.drmType, hwSecure });
+        hwDetails.push({ system: candidate.drmType, hwSecure });
+
+        log(`  ${candidate.drmType}: ${hwSecure ? 'HW ✓' : 'SW ✗'}`);
+
+        if (hwSecure && !selectedCandidate) {
+            selectedCandidate = candidate;
+            log(`  → Selected ${candidate.drmType} (hardware-backed)`);
+            // Short-circuit: we found a valid HW-backed DRM, no need to probe more
+            break;
+        }
+    }
+
+    // ── Step 5: Evaluate result ──────────────────────────────────────────
+    if (!selectedCandidate) {
+        const detailStr = evaluatedCandidates
+            .map(c => `${c.drmType}: ${c.hwSecure ? 'HW' : 'SW'}`)
+            .join(', ');
+        log(`No HW-backed DRM found (${detailStr}) — device is not supported`);
         return {
             supported: false,
             securityLevel: 'L3',
-            selectedDrmType: selectDrmTypeForPlatform(platform, details),
-            hwDetails: details,
+            selectedDrmType: candidates[0]?.drmType ?? 'Widevine',
+            hwDetails,
             platform,
-            blockReason: `No hardware-backed DRM available (${detailStr}). Only L1/hardware security is permitted.`,
+            blockReason: 'Device is not supported',
+            evaluatedCandidates,
         };
     }
 
-    // ── Step 4: Select the best CDM ──────────────────────────────────────
-    const selectedDrmType = selectDrmTypeForPlatform(platform, details);
-    log(`Selected DRM type: ${selectedDrmType} (hardware-secure)`);
-
+    log(`DRM ready: ${selectedCandidate.drmType} (L1 hardware-backed)`);
     return {
         supported: true,
         securityLevel: 'L1',
-        selectedDrmType,
-        hwDetails: details,
+        selectedDrmType: selectedCandidate.drmType,
+        hwDetails,
         platform,
+        evaluatedCandidates,
     };
 }
 
 // ---------------------------------------------------------------------------
-// CDM Selection Helper
+// CDM Selection Helper (backwards-compatible)
 // ---------------------------------------------------------------------------
 
 /**
  * Select the best DRM type for the detected platform and hardware capabilities.
  *
- * Selection logic:
- * 1. iOS/Safari → always FairPlay (only CDM available on Apple devices)
- * 2. If Widevine has HW support → use Widevine (Android, ChromeOS, some Windows)
- * 3. If PlayReady has HW support → use PlayReady (Windows 11 + Edge)
- * 4. Default → Widevine (should only reach here if detection already failed)
+ * This function is kept for backwards compatibility with code that already
+ * calls it (e.g. drmConfig.ts). The new pipeline in `detectDrmCapability()`
+ * already selects the DRM type inline during candidate evaluation.
  *
- * IMPORTANT: On Windows, Widevine is often L3 (software) while PlayReady is L1
- * (hardware). If we blindly picked Widevine, the library wouldn't try PlayReady
- * and playback would fail. That's why we check HW support per-CDM.
+ * If hwDetails are available, it picks the first HW-backed candidate in
+ * platform priority order. Otherwise falls back to the platform default.
  */
-function selectDrmTypeForPlatform(
+export function selectDrmTypeForPlatform(
     platform: PlatformInfo,
     hwDetails: DrmSecurityDetail[],
 ): DrmType {
-    // Apple devices only support FairPlay
-    if (platform.isIOS || platform.isSafari) {
-        return 'FairPlay';
+    const candidates = getPlatformDrmCandidates(platform);
+
+    // Pick the first candidate that has HW support
+    for (const candidate of candidates) {
+        const detail = hwDetails.find(d => d.system === candidate.drmType);
+        if (detail?.hwSecure) {
+            return candidate.drmType;
+        }
     }
 
-    // Check which CDMs have hardware security
-    const widevineHW = hwDetails.find(d => d.system === 'Widevine')?.hwSecure ?? false;
-    const playreadyHW = hwDetails.find(d => d.system === 'PlayReady')?.hwSecure ?? false;
-
-    if (widevineHW) {
-        // Widevine L1 available — preferred on Android, ChromeOS, Linux with HW
-        return 'Widevine';
-    }
-
-    if (playreadyHW) {
-        // PlayReady SL3000 available but Widevine is L3-only.
-        // Common on Windows 11 + Edge where Widevine=L3, PlayReady=SL3000.
-        return 'PlayReady';
-    }
-
-    // Fallback to Widevine (if we reach here, detection already failed and
-    // the caller should have blocked playback)
-    return 'Widevine';
+    // Fallback to platform default (caller should have blocked playback if
+    // no HW is available)
+    return candidates[0]?.drmType ?? 'Widevine';
 }

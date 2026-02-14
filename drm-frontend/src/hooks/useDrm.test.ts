@@ -12,7 +12,7 @@ vi.mock('../lib/drm', async (importOriginal) => {
   };
 });
 
-// Mock detectHardwareSecuritySupport to return supported=true in test environment
+// Mock drmUtils to return supported=true in test environment
 // (jsdom has no EME API, so it would otherwise always detect no HW security)
 vi.mock('../lib/drmUtils', async (importOriginal) => {
   const actual = await importOriginal() as any;
@@ -27,6 +27,7 @@ vi.mock('../lib/drmUtils', async (importOriginal) => {
       ]
     }),
     checkEmeAvailability: vi.fn().mockResolvedValue({ available: true }),
+    probeHardwareSecurity: vi.fn().mockResolvedValue(true),
   };
 });
 
@@ -57,6 +58,9 @@ vi.mock('../lib/drmCapability', async (importOriginal) => {
         isMobile: false,
         detectedPlatform: 'Chrome',
       },
+      evaluatedCandidates: [
+        { drmType: 'Widevine', hwSecure: true },
+      ],
     }),
   };
 });

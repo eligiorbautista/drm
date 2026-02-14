@@ -454,7 +454,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             </div>
           )}
 
-          {/* L3 Unsupported Device Overlay (Embed Mode) */}
+          {/* Unsupported Device Overlay (Embed Mode) */}
           {securityLevel === 'L3' && (
             <div className="fixed inset-0 flex items-center justify-center bg-[#141414]/95 z-20 p-4">
               <div className="flex flex-col items-center text-center p-6 sm:p-8 max-w-sm sm:max-w-md">
@@ -463,9 +463,9 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
                   </svg>
                 </div>
-                <h3 className="text-white font-semibold text-lg sm:text-xl mb-3">Playback Not Available</h3>
+                <h3 className="text-white font-semibold text-lg sm:text-xl mb-3">Device is not supported</h3>
                 <p className="text-[#d0d0d0] text-sm sm:text-base mb-4 leading-relaxed">
-                  This content requires a higher level of content protection than your current device or browser supports.
+                  This device does not support hardware-backed content protection required for playback.
                 </p>
                 <div className="w-full bg-[#252525]/60 rounded-lg p-4 mb-4 border border-[#333]">
                   <p className="text-[#a0a0a0] text-xs sm:text-sm leading-relaxed text-left mb-2 font-medium text-[#c0c0c0]">What you can try:</p>
@@ -475,9 +475,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                     <li className="flex items-start gap-2"><span className="text-amber-500 mt-0.5">&#8226;</span><span>Contact support if the issue persists</span></li>
                   </ul>
                 </div>
-                <p className="text-[#555] text-[10px] sm:text-xs">
-                  Security level: L3 (software only) — L1 (hardware) required
-                </p>
               </div>
             </div>
           )}
@@ -602,7 +599,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 style={{ display: 'none' }}
               />
 
-              {/* L3 Unsupported Device Overlay (Viewer Mode) */}
+              {/* Unsupported Device Overlay (Viewer Mode) */}
               {securityLevel === 'L3' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-[#141414]/90 z-20">
                   <div className="p-4 sm:p-6 bg-[#1e1e1e]/90 border border-[#404040] rounded-lg text-center max-w-sm mx-4 backdrop-blur-sm">
@@ -611,13 +608,13 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
                       </svg>
                     </div>
-                    <h3 className="text-white font-bold text-sm sm:text-lg mb-2">Playback Not Available</h3>
+                    <h3 className="text-white font-bold text-sm sm:text-lg mb-2">Device is not supported</h3>
                     <p className="text-[#d0d0d0] text-xs sm:text-sm mb-3 leading-relaxed">
-                      This content requires a higher level of content protection than your current device or browser supports.
+                      This device does not support hardware-backed content protection required for playback.
                     </p>
                     <p className="text-[#a0a0a0] text-[11px] sm:text-xs mb-2">Try a different browser or device.</p>
                     <p className="text-[#555] text-[9px] sm:text-[10px]">
-                      Security level: L3 (software only) — L1 (hardware) required
+                      {drmError || 'No hardware-backed DRM available'}
                     </p>
                   </div>
                 </div>

@@ -295,3 +295,52 @@ export async function detectHardwareSecuritySupport(
     const supported = details.some(d => d.hwSecure);
     return { supported, details };
 }
+
+// ---------------------------------------------------------------------------
+// Single-Candidate Hardware Security Probe
+// ---------------------------------------------------------------------------
+
+/**
+ * Probe a single DRM key system for hardware-level security.
+ *
+ * Used by the platform-first pipeline in `drmCapability.ts` to walk the
+ * candidate list one-at-a-time, stopping at the first HW-backed match.
+ *
+ * @param keySystem  - EME key system string (e.g. 'com.widevine.alpha')
+ * @param robustness - HW robustness level (e.g. 'HW_SECURE_ALL', '3000', or '' for FairPlay)
+ * @param initDataTypes - Init data types to probe with (e.g. ['cenc'] or ['sinf'])
+ * @param encryptionScheme - Encryption scheme to probe ('cenc' or 'cbcs')
+ * @returns true if the key system supports the requested robustness level
+ */
+export async function probeHardwareSecurity(
+    keySystem: string,
+    robustness: string,
+    initDataTypes: string[],
+    encryptionScheme: 'cenc' | 'cbcs' = 'cbcs',
+): Promise<boolean> {
+    if (!navigator.requestMediaKeySystemAccess) {
+        return false;
+    }
+
+    try {
+        const videoCapability: any = {
+            contentType: 'video/mp4; codecs="avc1.42E01E"',
+        };
+        // Only set robustness when provided (FairPlay doesn't use it)
+        if (robustness) {
+            videoCapability.robustness = robustness;
+        }
+        // Only set encryptionScheme for non-FairPlay (FairPlay uses 'sinf' initDataType)
+        if (!initDataTypes.includes('sinf')) {
+            videoCapability.encryptionScheme = encryptionScheme;
+        }
+
+        await navigator.requestMediaKeySystemAccess(keySystem, [{
+            initDataTypes,
+            videoCapabilities: [videoCapability],
+        }]);
+        return true;
+    } catch {
+        return false;
+    }
+}
