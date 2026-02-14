@@ -86,10 +86,15 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
         audioElement,
         keyIdHex,
         ivHex,
-        encryptionMode = 'cbcs',
+        encryptionMode: requestedEncryptionMode = 'cbcs',
         capability,
         onFetch,
     } = options;
+
+    // PlayReady only supports cenc — override cbcs if PlayReady was selected.
+    // This prevents the library from skipping PlayReady due to encryption mismatch.
+    const encryptionMode: 'cenc' | 'cbcs' =
+        capability.selectedDrmType === 'PlayReady' ? 'cenc' : requestedEncryptionMode;
 
     const platform = capability.platform;
 
@@ -146,15 +151,9 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
     ];
 
     // ── DRM type selection ────────────────────────────────────────────────
-    // Only force the CDM type when it's unambiguous. On Windows, the library
-    // MUST auto-detect because:
-    //   - PlayReady has L1 (SL3000) but only supports cenc encryption
-    //   - Widevine has L3 but supports cbcs encryption
-    //   - The library internally picks the CDM compatible with the stream's
-    //     encryption scheme, which we can't know until the track arrives
-    //
-    // Our capability pipeline (drmCapability.ts) handles the blocking overlay
-    // decision. The config builder handles which CDM the library actually uses.
+    // Use the CDM that capability detection confirmed has L1 hardware support.
+    // This ensures the library uses the right CDM instead of probing internally
+    // and potentially picking a CDM without L1.
     let drmType: string | undefined;
     if (platform.isIOS || platform.isSafari) {
         drmType = 'FairPlay';
@@ -162,9 +161,11 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
         drmType = 'Widevine';
     } else if (platform.isFirefox) {
         drmType = 'Widevine';
+    } else if (capability.selectedDrmType) {
+        // Windows / other: use the CDM that capability detection confirmed has L1.
+        // e.g., on Windows+Edge this will be 'PlayReady', on Windows+Chrome 'Widevine'.
+        drmType = capability.selectedDrmType;
     }
-    // Windows / other: leave undefined → library auto-selects based on
-    // encryption scheme compatibility
 
     // ── Build final config ────────────────────────────────────────────────
     // CALLBACK AUTHORIZATION MODE:
