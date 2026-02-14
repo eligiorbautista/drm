@@ -146,11 +146,25 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
     ];
 
     // ── DRM type selection ────────────────────────────────────────────────
-    // Use the CDM type that our capability pipeline already confirmed has
-    // hardware-level support. This avoids the library's own CDM probing,
-    // which can try Widevine first on Edge (fails with com.widevine.alpha.experiment)
-    // and break video track routing even though PlayReady L1 is available.
-    const drmType: string = capability.selectedDrmType;
+    // Only force the CDM type when it's unambiguous. On Windows, the library
+    // MUST auto-detect because:
+    //   - PlayReady has L1 (SL3000) but only supports cenc encryption
+    //   - Widevine has L3 but supports cbcs encryption
+    //   - The library internally picks the CDM compatible with the stream's
+    //     encryption scheme, which we can't know until the track arrives
+    //
+    // Our capability pipeline (drmCapability.ts) handles the blocking overlay
+    // decision. The config builder handles which CDM the library actually uses.
+    let drmType: string | undefined;
+    if (platform.isIOS || platform.isSafari) {
+        drmType = 'FairPlay';
+    } else if (platform.isAndroid) {
+        drmType = 'Widevine';
+    } else if (platform.isFirefox) {
+        drmType = 'Widevine';
+    }
+    // Windows / other: leave undefined → library auto-selects based on
+    // encryption scheme compatibility
 
     // ── Build final config ────────────────────────────────────────────────
     // CALLBACK AUTHORIZATION MODE:
@@ -169,8 +183,10 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
         mediaBufferMs,
     };
 
-    // Always set the CDM type — our pipeline guarantees a selection
-    config.type = drmType;
+    // Only set type when we know which CDM to use — otherwise let the library auto-detect
+    if (drmType) {
+        config.type = drmType;
+    }
 
     // Attach fetch interceptor if provided (for debugging license requests)
     if (onFetch) {
