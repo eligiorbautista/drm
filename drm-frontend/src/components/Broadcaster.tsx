@@ -16,6 +16,7 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const { isConnected, isConnecting, error, connect, disconnect } = useWhip();
   const [wasConnected, setWasConnected] = useState(false);
+  const [encryptionMode, setEncryptionMode] = useState<'cenc' | 'cbcs'>('cbcs');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
 
@@ -59,16 +60,16 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
 
   const configureDrm = async (_pc: RTCPeerConnection) => {
     logDebug('[Broadcaster] Configuring DRM encryption...');
-    
+
     const key = hexToUint8Array(import.meta.env.VITE_DRM_CONTENT_KEY);
     const iv = hexToUint8Array(import.meta.env.VITE_DRM_IV);
     const keyId = import.meta.env.VITE_DRM_KEY_ID;
-    
+
     logDebug(`[Broadcaster] Encryption Config:`);
     logDebug(`[Broadcaster]   KeyId: ${keyId}`);
     logDebug(`[Broadcaster]   ContentKey: ${import.meta.env.VITE_DRM_CONTENT_KEY} (${key.length} bytes)`);
     logDebug(`[Broadcaster]   IV: ${import.meta.env.VITE_DRM_IV} (${iv.length} bytes)`);
-    
+
     if (!key || !iv) {
       logError('[Broadcaster] Encryption key or IV missing from environment variables');
       throw new Error('Encryption key or IV missing from environment variables');
@@ -87,7 +88,7 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
     try {
       // Load the encryption module from global scope
       // We need to provide locateFile to find the WASM file at the correct path
-      
+
       logDebug('[Broadcaster] Calling Module() with locateFile override...');
       // @ts-ignore - Module is loaded from clcrypto.js
       const crypto = await ModuleGlobal({
@@ -104,33 +105,41 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
           return path;
         }
       });
-      
+
       logDebug('[Broadcaster] WASM encryption module loaded successfully');
       logDebug('[Broadcaster]   crypto.Mode:', crypto.Mode);
       logDebug('[Broadcaster]   crypto.Codec:', crypto.Codec);
       logDebug('[Broadcaster]   crypto.Encryptor:', crypto.Encryptor);
 
-      // Create encryptor with CBC mode (CBCS)
-      const mode = crypto.Mode.CBC;
+      // Create encryptor with selected mode
+      // CBC for FairPlay/Widevine (L1), CTR for PlayReady/Widevine (L3/Legacy)
+      const mode = encryptionMode === 'cenc' ? crypto.Mode.CTR : crypto.Mode.CBC;
       const maxFrameSize = 1024 * 1024; // 1MB
-      
-      logDebug('[Broadcaster] Creating Encryptor...');
+
+      logDebug(`[Broadcaster] Creating Encryptor with mode: ${encryptionMode.toUpperCase()} (${mode})...`);
       const encryptor = new crypto.Encryptor(crypto.Codec.AVC, mode, key, maxFrameSize);
       logDebug('[Broadcaster] Encryptor created successfully');
       logDebug('[Broadcaster]   encryptor.getSrcBuffer:', typeof encryptor.getSrcBuffer);
       logDebug('[Broadcaster]   encryptor.getDstBuffer:', typeof encryptor.getDstBuffer);
       logDebug('[Broadcaster]   encryptor.encrypt:', typeof encryptor.encrypt);
-      logDebug('[Broadcaster]   encryptor.setCbcIv:', typeof encryptor.setCbcIv);
-      
-      // Set the IV for CBC mode
-      logDebug('[Broadcaster] Setting CBC IV...');
-      encryptor.setCbcIv(iv);
-      logDebug('[Broadcaster] CBC IV set successfully');
-      
+
+      // key configuration for CBC mode
+      if (encryptionMode === 'cbcs') {
+        if (typeof encryptor.setCbcIv === 'function') {
+          logDebug('[Broadcaster] Setting CBC IV...');
+          encryptor.setCbcIv(iv);
+          logDebug('[Broadcaster] CBC IV set successfully');
+        } else {
+          logWarning('[Broadcaster] setCbcIv method missing on encryptor despite CBC mode selected');
+        }
+      } else {
+        logDebug('[Broadcaster] CTR mode selected - skipping setCbcIv (IV used internally/implicitly)');
+      }
+
       // Store the encryptor globally for use in transform functions
       setEncryptionModule(encryptor);
-      
-      logDebug(`[Broadcaster] Encryptor ready: CBC mode, ${key.length}-byte key, IV set`);
+
+      logDebug(`[Broadcaster] Encryptor ready: ${encryptionMode.toUpperCase()} mode, ${key.length}-byte key`);
       logDebug(`[Broadcaster] Merchant: ${merchant || import.meta.env.VITE_DRM_MERCHANT}, KeyId: ${keyId}`);
     } catch (err: any) {
       logError(`[Broadcaster] Failed to load encryption module: ${err.message}`);
@@ -171,7 +180,7 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
   // Toggle fullscreen mode using Fullscreen API
   const toggleFullscreen = async () => {
     if (!videoContainerRef.current) return;
-    
+
     try {
       if (!document.fullscreenElement) {
         await videoContainerRef.current.requestFullscreen();
@@ -190,7 +199,7 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
-    
+
     document.addEventListener('fullscreenchange', handleFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
@@ -231,13 +240,12 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
       {/* Responsive video container */}
       <div className="relative group bg-[#1e1e1e] rounded-lg overflow-hidden w-full">
         {/* Video container - this is what goes fullscreen */}
-        <div 
+        <div
           ref={videoContainerRef}
-          className={`transition-all duration-300 ${
-            isFullscreen 
-              ? 'fixed inset-0 z-50 bg-black' 
+          className={`transition-all duration-300 ${isFullscreen
+              ? 'fixed inset-0 z-50 bg-black'
               : ''
-          }`}
+            }`}
         >
           {/* Fullscreen header */}
           {isFullscreen && (
@@ -249,9 +257,8 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
           )}
 
           {/* Video element - fills fullscreen when active */}
-          <div className={`${
-            isFullscreen ? 'h-screen w-full' : 'aspect-video sm:aspect-video lg:aspect-video xl:aspect-[21/9] max-h-[40vh] sm:max-h-[50vh] lg:max-h-[60vh] xl:max-h-[70vh]'
-          }`}>
+          <div className={`${isFullscreen ? 'h-screen w-full' : 'aspect-video sm:aspect-video lg:aspect-video xl:aspect-[21/9] max-h-[40vh] sm:max-h-[50vh] lg:max-h-[60vh] xl:max-h-[70vh]'
+            }`}>
             <video
               ref={videoRef}
               className="w-full h-full object-contain"
@@ -343,11 +350,10 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
             <button
               onClick={handleConnect}
               disabled={isConnecting}
-              className={`px-4 py-2.5 sm:py-3 text-black rounded-lg font-medium transition-all shadow-lg cursor-pointer min-h-[48px] ${
-                isConnecting
+              className={`px-4 py-2.5 sm:py-3 text-black rounded-lg font-medium transition-all shadow-lg cursor-pointer min-h-[48px] ${isConnecting
                   ? 'bg-[#404040] cursor-not-allowed opacity-75'
                   : 'bg-white hover:bg-[#e5e5e5] hover:scale-105 active:scale-95'
-              }`}
+                }`}
             >
               {isConnecting ? 'Starting...' : 'Start Broadcasting'}
             </button>
@@ -426,6 +432,38 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
                 </div>
               </div>
             </>
+          )}
+        </div>
+
+        {/* Settings Controls */}
+        <div className="flex items-center gap-3">
+          {/* Encryption Mode Selector */}
+          {!isConnected && encrypted && (
+            <div className="flex items-center gap-2 bg-[#252525] p-1 rounded-lg border border-[#404040]">
+              <span className="text-[#a0a0a0] text-xs font-medium px-2">Encryption:</span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setEncryptionMode('cbcs')}
+                  className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${encryptionMode === 'cbcs'
+                      ? 'bg-[#404040] text-white border border-[#555]'
+                      : 'text-[#888] hover:text-white'
+                    }`}
+                  title="AES-CBC (FairPlay/Widevine)"
+                >
+                  CBC (Apple)
+                </button>
+                <button
+                  onClick={() => setEncryptionMode('cenc')}
+                  className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${encryptionMode === 'cenc'
+                      ? 'bg-[#404040] text-white border border-[#555]'
+                      : 'text-[#888] hover:text-white'
+                    }`}
+                  title="AES-CTR (PlayReady/Widevine)"
+                >
+                  CTR (MS)
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>
