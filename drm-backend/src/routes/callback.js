@@ -72,18 +72,14 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
         profile: { type: 'purchase' },
         assetId: normalizedAssetId,
         storeLicense: true,
-        outputProtection: {
-          digital: true,
-          analogue: true,
-          enforce: true
-        },
         // Output Protection: HDCP enforcement per resolution tier
-        // HDCP_v2 = 4K/UHD, HDCP_v1 = HD/SD, HDCP_NONE = audio only
+        // HDCP_V2 = 4K/UHD, HDCP_V1 = HD/SD, HDCP_NONE = audio only
+        // NOTE: We remove the legacy 'outputProtection' block to avoid conflicts with 'op'.
         op: {
           config: {
-            UHD: { [drmModuleKey]: { requireHDCP: 'HDCP_v2' } },
-            HD: { [drmModuleKey]: { requireHDCP: 'HDCP_v1' } },
-            SD: { [drmModuleKey]: { requireHDCP: 'HDCP_v1' } },
+            UHD: { [drmModuleKey]: { requireHDCP: 'HDCP_V2' } },
+            HD: { [drmModuleKey]: { requireHDCP: 'HDCP_V1' } },
+            SD: { [drmModuleKey]: { requireHDCP: 'HDCP_V1' } },
             AUDIO: { [drmModuleKey]: { requireHDCP: 'HDCP_NONE' } }
           }
         }
