@@ -91,10 +91,8 @@ export function buildDrmConfig(options: BuildDrmConfigOptions): DrmConfig {
         onFetch,
     } = options;
 
-    // PlayReady only supports cenc — override cbcs if PlayReady was selected.
-    // This prevents the library from skipping PlayReady due to encryption mismatch.
-    const encryptionMode: 'cenc' | 'cbcs' =
-        capability.selectedDrmType === 'PlayReady' ? 'cenc' : requestedEncryptionMode;
+    // Use requested encryption mode (default 'cbcs')
+    const encryptionMode = requestedEncryptionMode;
 
     const platform = capability.platform;
 
