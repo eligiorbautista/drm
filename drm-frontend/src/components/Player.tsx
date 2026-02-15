@@ -25,6 +25,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   const [isMuted, setIsMuted] = useState(true);
   const [drmError, setDrmError] = useState<string | null>(null);
   const [securityLevel, setSecurityLevel] = useState<'L1' | 'L3' | 'checking' | null>(null);
+  const [drmSchemeInfo, setDrmSchemeInfo] = useState<{ drmType: string; hwSecure: boolean }[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
@@ -261,6 +262,11 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
       setSecurityLevel('checking');
       const capability = await detectDrmCapability(logDebug);
 
+      // Always store evaluated candidates for debugging (shown on overlay)
+      if (capability.evaluatedCandidates?.length > 0) {
+        setDrmSchemeInfo(capability.evaluatedCandidates);
+      }
+
       if (!capability.supported) {
         // ── Step 3: Blocked — show fallback overlay ─────────────────────
         // Device only supports Widevine L3 (software) or has no DRM at all.
@@ -475,6 +481,26 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                 <p className="text-[#d0d0d0] text-sm sm:text-base mb-4 leading-relaxed">
                   This device does not support hardware-backed content protection required for playback.
                 </p>
+                {/* DRM scheme availability info for debugging */}
+                {drmSchemeInfo.length > 0 && (
+                  <div className="w-full bg-[#252525]/60 rounded-lg p-3 sm:p-4 mb-3 border border-[#333]">
+                    <p className="text-[#c0c0c0] text-xs sm:text-sm font-medium mb-2">Available DRM Schemes:</p>
+                    <div className="space-y-1.5">
+                      {drmSchemeInfo.map((scheme) => (
+                        <div key={scheme.drmType} className="flex items-center justify-between text-xs sm:text-sm">
+                          <span className="text-[#a0a0a0] font-mono">{scheme.drmType}</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] sm:text-xs font-medium ${scheme.hwSecure
+                              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                              : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                            }`}>
+                            {scheme.hwSecure ? 'L1 (Hardware)' : 'L3 (Software)'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[#666] text-[10px] sm:text-[11px] mt-2">Hardware-backed (L1) DRM is required for playback.</p>
+                  </div>
+                )}
                 <div className="w-full bg-[#252525]/60 rounded-lg p-4 mb-4 border border-[#333]">
                   <p className="text-[#a0a0a0] text-xs sm:text-sm leading-relaxed text-left mb-2 font-medium text-[#c0c0c0]">What you can try:</p>
                   <ul className="text-[#a0a0a0] text-xs sm:text-sm leading-relaxed text-left space-y-1.5">
@@ -620,6 +646,25 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                     <p className="text-[#d0d0d0] text-xs sm:text-sm mb-3 leading-relaxed">
                       This device does not support hardware-backed content protection required for playback.
                     </p>
+                    {/* DRM scheme availability info for debugging */}
+                    {drmSchemeInfo.length > 0 && (
+                      <div className="w-full bg-[#252525]/60 rounded-lg p-3 mb-3 border border-[#333] text-left">
+                        <p className="text-[#c0c0c0] text-[11px] sm:text-xs font-medium mb-1.5">Available DRM Schemes:</p>
+                        <div className="space-y-1">
+                          {drmSchemeInfo.map((scheme) => (
+                            <div key={scheme.drmType} className="flex items-center justify-between text-[11px] sm:text-xs">
+                              <span className="text-[#a0a0a0] font-mono">{scheme.drmType}</span>
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-medium ${scheme.hwSecure
+                                  ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                  : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                }`}>
+                                {scheme.hwSecure ? 'L1 (Hardware)' : 'L3 (Software)'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <p className="text-[#a0a0a0] text-[11px] sm:text-xs mb-2">Try a different browser or device.</p>
                     <p className="text-[#555] text-[9px] sm:text-[10px]">
                       {drmError || 'No hardware-backed DRM available'}
