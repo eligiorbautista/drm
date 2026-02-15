@@ -54,7 +54,7 @@ export function useWhip() {
 
       try {
         logToDebug('info', 'Starting WHIP connection...');
-        
+
         // Create peer connection
         const pc = new RTCPeerConnection({
           iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }],
@@ -128,6 +128,11 @@ export function useWhip() {
         if (videoElement && stream) {
           videoElement.srcObject = stream;
           videoElement.muted = true; // Always mute local preview to avoid feedback
+          try {
+            await videoElement.play();
+          } catch (e) {
+            console.error('Auto-play failed', e);
+          }
         }
       } catch (err: any) {
         console.error('WHIP connection error:', err);
@@ -194,13 +199,13 @@ async function accessLocalMediaSources(
       // Try specific device if OBS Virtual Camera detected
       ...(videoDevices.some((d) => d.label.toLowerCase().includes('obs'))
         ? [
-            {
-              video: {
-                deviceId: videoDevices.find((d) => d.label.toLowerCase().includes('obs'))!.deviceId,
-              },
-              audio: true,
+          {
+            video: {
+              deviceId: videoDevices.find((d) => d.label.toLowerCase().includes('obs'))!.deviceId,
             },
-          ]
+            audio: true,
+          },
+        ]
         : []),
       // Specific resolution
       { video: { width: 1280, height: 720 }, audio: true },
@@ -324,7 +329,7 @@ async function videoTransformFunction(encodedFrame: any, controller: any) {
   try {
     frameCount++;
     console.log(`[WHIP] Frame #${frameCount}: Processing ${encodedFrame.data.byteLength} bytes BEFORE encryption`);
-    
+
     const srcBuf = encryptionModule.getSrcBuffer();
     srcBuf.set(new Uint8Array(encodedFrame.data));
     const encryptedSize = encryptionModule.encrypt(encodedFrame.data.byteLength);
@@ -336,7 +341,7 @@ async function videoTransformFunction(encodedFrame: any, controller: any) {
       new Uint8Array(newData).set(dstBuf);
 
       encodedFrame.data = newData;
-      
+
       // Log first 10 frames to confirm encryption is working
       if (frameCount <= 10) {
         console.log(`[WHIP] Frame #${frameCount}: ENCRYPTED from ${encodedFrame.data.byteLength} -> ${encryptedSize} bytes`);

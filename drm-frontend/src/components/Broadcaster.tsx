@@ -334,6 +334,26 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
           <div className="absolute top-3 sm:top-4 left-3 sm:left-4 bg-[#252525]/70 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full backdrop-blur-sm border border-[#404040] z-10">
             <span className="text-white text-xs sm:text-sm font-medium">Local Preview</span>
           </div>
+
+          {/* Fullscreen Button - Overlay */}
+          <div className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 z-20">
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 bg-[#252525]/80 hover:bg-[#333333]/90 text-white rounded-lg border border-[#404040] backdrop-blur-sm transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-lg"
+              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            >
+              {isFullscreen ? (
+                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -381,26 +401,8 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
           </div>
         </div>
 
-        {/* Camera/Mic indicator */}
+        {/* Camera/Mic Status Indicators */}
         <div className="flex items-center gap-2">
-          {/* Fullscreen Button */}
-          <button
-            onClick={toggleFullscreen}
-            className="p-2.5 bg-[#252525] hover:bg-[#333333] text-white rounded-lg border border-[#404040] transition-colors cursor-pointer min-w-[48px] min-h-[48px] flex items-center justify-center"
-            title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-          >
-            {isFullscreen ? (
-              <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            ) : (
-              <svg className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-              </svg>
-            )}
-          </button>
-
           {isConnected && (
             <>
               <div className="hidden sm:flex p-2.5 bg-[#252525] rounded-lg border border-[#404040]" title="Camera Active">
@@ -437,6 +439,6 @@ export const Broadcaster: React.FC<BroadcasterProps> = ({ endpoint, merchant, en
 
       {/* Debug Panel - Below the video - Hidden in production */}
       {!isProduction && <DebugPanel id={DEBUG_PANEL_ID} title="Broadcaster Debug Log" />}
-    </div>
+    </div >
   );
 };
