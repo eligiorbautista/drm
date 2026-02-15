@@ -65,25 +65,25 @@ router.post('/', validateCallbackRequest, async (req, res, next) => {
         drmModuleKey = 'FairPlayM';
       }
 
-      // EXPLICIT MODERN CRT STRUCTURE
-      // We provide both legacy 'profile' and modern 'type' for maximum compatibility
-      // across different DRMtoday callback versions (JSON_V1 vs JSON_V2)
+      // CRT structure matching DRMtoday's expected format.
+      // NOTE: Do NOT add a top-level 'type' field — DRMtoday rejects it.
+      // The license type is conveyed via profile.type only.
       crt = {
-        type: 'purchase',
-        profile: { type: 'purchase' }, // Redundancy for older schemas
+        profile: { type: 'purchase' },
         assetId: normalizedAssetId,
         storeLicense: true,
         outputProtection: {
           digital: true,
           analogue: true,
-          enforce: true // Enable strict legacy enforcement
+          enforce: true
         },
-        // Enhanced Output Protection config
+        // Output Protection: HDCP enforcement per resolution tier
+        // HDCP_v2 = 4K/UHD, HDCP_v1 = HD/SD, HDCP_NONE = audio only
         op: {
           config: {
-            UHD: { [drmModuleKey]: { requireHDCP: 'HDCP_NONE' } },
-            HD: { [drmModuleKey]: { requireHDCP: 'HDCP_NONE' } },
-            SD: { [drmModuleKey]: { requireHDCP: 'HDCP_NONE' } },
+            UHD: { [drmModuleKey]: { requireHDCP: 'HDCP_v2' } },
+            HD: { [drmModuleKey]: { requireHDCP: 'HDCP_v1' } },
+            SD: { [drmModuleKey]: { requireHDCP: 'HDCP_v1' } },
             AUDIO: { [drmModuleKey]: { requireHDCP: 'HDCP_NONE' } }
           }
         }
