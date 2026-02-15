@@ -402,7 +402,18 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
           {/* Unmute Button - Only visible when loader is gone (stream is playing) */}
           {isMuted && isPlaying && !isConnecting && !error && !drmError && (
             <button
-              onClick={() => {
+              onClick={async () => {
+                // Resume AudioContext first (user interaction)
+                const audioCtx = (window as any).webkitAudioContext || (window as any).AudioContext;
+                if (audioCtx && audioCtx.state === 'suspended') {
+                  try {
+                    await audioCtx.resume();
+                    console.log('[Player] AudioContext resumed by unmute button');
+                  } catch (err) {
+                    console.warn('[Player] Failed to resume AudioContext:', err);
+                  }
+                }
+
                 if (videoRef.current) {
                   videoRef.current.muted = false;
                 }
@@ -561,7 +572,18 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                     <div className="flex items-center gap-3 pointer-events-auto">
                       {isMuted && isPlaying && !isConnecting && !error && !drmError && (
                         <button
-                          onClick={() => {
+                          onClick={async () => {
+                            // Resume AudioContext first (user interaction)
+                            const audioCtx = (window as any).webkitAudioContext || (window as any).AudioContext;
+                            if (audioCtx && audioCtx.state === 'suspended') {
+                              try {
+                                await audioCtx.resume();
+                                console.log('[Player] AudioContext resumed by header unmute button');
+                              } catch (err) {
+                                console.warn('[Player] Failed to resume AudioContext:', err);
+                              }
+                            }
+
                             if (videoRef.current) {
                               videoRef.current.muted = false;
                             }
