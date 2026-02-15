@@ -26,8 +26,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
   const [drmError, setDrmError] = useState<string | null>(null);
   const [securityLevel, setSecurityLevel] = useState<'L1' | 'L3' | 'checking' | null>(null);
   const [drmSchemeInfo, setDrmSchemeInfo] = useState<{ drmType: string; hwSecure: boolean }[]>([]);
-  const [encryptionMode, setEncryptionMode] = useState<'cbcs' | 'cenc'>('cbcs');
-  const [hasRetriedEncryption, setHasRetriedEncryption] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const isProduction = import.meta.env.VITE_NODE_ENV === 'production';
@@ -334,7 +332,7 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
         audioElement: audioRef.current!,
         keyIdHex: import.meta.env.VITE_DRM_KEY_ID,
         ivHex: import.meta.env.VITE_DRM_IV,
-        encryptionMode,
+        encryptionMode: 'cbcs',
         capability,
         onFetch,
       }, handlers);
@@ -377,50 +375,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
     }
   };
 
-  /**
-   * Handles video playback errors to implementing retry logic.
-   * If playback fails with a decode error (often decryption failure) in CBCS mode,
-   * try falling back to CENC mode once.
-   */
-  const handleVideoError = async (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
-    const err = e.currentTarget.error;
-    if (!err) return;
-
-    logError(`[Player] Video Error: Code ${err.code}, Message: ${err.message}`);
-
-    // Check for MEDIA_ERR_DECODE (3) or MEDIA_ERR_SRC_NOT_SUPPORTED (4)
-    // Decryption failures often manifest as decode errors or src errors
-    if ((err.code === 3 || err.code === 4) && encryptionMode === 'cbcs' && !hasRetriedEncryption) {
-      logWarning('[Player] Playback failed with CBCS. Attempts to retry with CENC (AES-CTR)...');
-
-      // Update state to trigger retry
-      setEncryptionMode('cenc');
-      setHasRetriedEncryption(true);
-
-      // Reset error state to allow retry UI to clear if blocking
-      setDrmError(null);
-    }
-  };
-
-  // Effect to handle retry connection after state update
-  useEffect(() => {
-    if (hasRetriedEncryption && encryptionMode === 'cenc') {
-      const retryConnection = async () => {
-        logWarning('[Player] Executing retry: Switching to CENC (AES-CTR) and reconnecting...');
-        try {
-          // Ensure we are disconnected first
-          await disconnect();
-          // Re-connect with new encryption settings
-          await handleConnect();
-        } catch (retryErr) {
-          logError('[Player] Retry connection failed:', retryErr);
-        }
-      };
-      retryConnection();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [encryptionMode, hasRetriedEncryption]);
-
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -435,7 +389,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
             autoPlay
             playsInline
             muted={isMuted}
-            onError={handleVideoError}
           />
           {/* Hidden audio element for DRM (required by rtc-drm-transform library) */}
           <audio
@@ -643,7 +596,6 @@ export const Player: React.FC<PlayerProps> = ({ endpoint, merchant, userId, encr
                   autoPlay
                   playsInline
                   muted={isMuted}
-                  onError={handleVideoError}
                   onClick={async () => {
                     const video = videoRef.current;
                     if (!video) return;
